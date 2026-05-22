@@ -1,0 +1,256 @@
+Task 1: Extrair Configuração
+Objetivo: mover constantes e paths para config.py.
+
+Escopo:
+
+PASTA_DOCS
+PASTA_SAIDA
+PLANILHA
+limites como 18000, 60000, timeouts e similares
+possíveis nomes de cache
+Entrega esperada:
+
+novo config.py
+nbr12721.py importando essas constantes
+nenhuma mudança de comportamento
+Validação que eu farei:
+
+se não ficaram “números mágicos” duplicados no arquivo principal
+se os imports ficaram sem ciclo
+se os nomes continuam claros e consistentes
+Critério de aceitação:
+
+centralização total das configurações operacionais
+execução continua equivalente à atual
+
+------------------------------------------------------------------------------------------
+
+Task 2: Extrair Prompts
+Objetivo: mover todos os prompts para prompts.py.
+
+Escopo:
+
+PROMPT_SISTEMA
+PROMPT_EXTRAIR
+PROMPT_RESUMIR_LOTE
+Entrega esperada:
+
+novo prompts.py
+consumo por import no arquivo principal ou módulos futuros
+Validação que eu farei:
+
+comparação estrutural dos prompts extraídos
+confirmação de que nenhum texto foi alterado acidentalmente
+checagem de placeholders {textos} e {cub_contexto}
+Critério de aceitação:
+
+prompts fora do arquivo principal
+conteúdo preservado byte a byte, idealmente
+
+----------------------------------------------------------------------------------------------
+
+Task 3: Extrair Cliente LLM
+Objetivo: isolar toda a integração com Claude/Anthropic em llm.py.
+
+Escopo:
+
+_claude_env
+_encontrar_claude
+chamar_claude_sdk
+chamar_claude_cli
+chamar_claude_api
+chamar_llm
+Entrega esperada:
+
+módulo llm.py
+interface clara com uma função principal de uso externo, idealmente chamar_llm(...)
+Validação que eu farei:
+
+se existe um único ponto público de chamada
+se prompts/config entram por parâmetro ou import controlado
+se o fallback API -> SDK -> CLI foi preservado
+se não surgiram dependências cruzadas com pipeline
+Critério de aceitação:
+
+infraestrutura de LLM isolada
+sem mudança da ordem de fallback
+sem lógica de negócio de NBR dentro do módulo
+
+------------------------------------------------------------------------------------------------
+
+Task 4: Extrair Integração CUB
+Objetivo: mover a busca e formatação do CUB para cub.py.
+
+Escopo:
+
+buscar_cub_sinduscon
+_formatar_cub_contexto
+Entrega esperada:
+
+módulo cub.py
+funções com retorno estável e previsível
+Validação que eu farei:
+
+se datas, parsing e fallback continuam iguais
+se o texto formatado para prompt não mudou desnecessariamente
+se não houve acoplamento com main
+Critério de aceitação:
+
+módulo autocontido
+sem dependência de detalhes da LLM
+
+-------------------------------------------------------------------------------------------
+
+Task 5: Extrair Processamento de PDFs e Texto
+Objetivo: mover a cadeia de extração e redução textual para pdf_processing.py.
+
+Escopo:
+
+extrair_texto_pdf
+normalizar_ocr
+prefiltrar_texto
+separar_documentos
+dividir_lotes_documentos
+Entrega esperada:
+
+módulo pdf_processing.py
+funções utilitárias organizadas por etapa
+Validação que eu farei:
+
+se o fluxo OCR/nativo foi preservado
+se a pré-filtragem continua idêntica
+se chunking de documentos não mudou semanticamente
+se imports pesados continuam locais onde faz sentido
+Critério de aceitação:
+
+separação entre “extração” e “orquestração”
+nenhum desvio no tratamento textual
+
+----------------------------------------------------------------------------------------------
+
+Task 6: Extrair Serialização e Consolidação
+Objetivo: mover o parsing e a compactação para serialization.py.
+
+Escopo:
+
+parsear_json
+compactar_resumos
+Entrega esperada:
+
+módulo serialization.py
+Validação que eu farei:
+
+se parsear_json continua tolerante a markdown e lixo ao redor
+se compactar_resumos preserva a estrutura usada no prompt final
+Critério de aceitação:
+
+responsabilidades de transformação textual isoladas
+sem dependência de Excel ou rede
+
+----------------------------------------------------------------------------------------------
+
+Task 7: Extrair Escrita da Planilha
+Objetivo: mover preencher_planilha para excel_writer.py.
+
+Escopo:
+
+função inteira de preenchimento
+helpers internos N e S podem ficar privados no módulo
+Entrega esperada:
+
+módulo excel_writer.py
+chamada externa simples: preencher_planilha(dados, modelo, saida)
+Validação que eu farei:
+
+se nomes de abas e células foram preservados
+se não houve regressão em campos opcionais e numéricos
+se o módulo não depende de lógica de LLM
+Critério de aceitação:
+
+escrita Excel isolada
+API simples e estável
+
+--------------------------------------------------------------------------------------------
+
+Task 8: Criar Pipeline
+Objetivo: mover a orquestração para pipeline.py.
+
+Escopo:
+
+resumir_lotes_documentos
+fluxo principal hoje concentrado em main_async
+idealmente expor algo como async def executar_pipeline():
+Entrega esperada:
+
+módulo pipeline.py
+main passa a apenas chamar o pipeline
+Validação que eu farei:
+
+se a ordem do fluxo foi preservada
+se cache, filtragem, CUB, resumo, consolidação e exportação continuam no mesmo encadeamento
+se erros e mensagens continuam compreensíveis
+Critério de aceitação:
+
+pipeline legível
+main fino
+sem regra de negócio espalhada
+
+--------------------------------------------------------------------------------------------
+
+Task 9: Simplificar Entry Point
+Objetivo: transformar o arquivo principal em ponto de entrada mínimo.
+
+Escopo:
+
+main_async
+main
+imports de bootstrap
+Entrega esperada:
+
+main.py ou manutenção de nbr12721.py como entrypoint fino
+arquivo principal com poucas linhas
+Validação que eu farei:
+
+se o entrypoint não contém mais lógica de negócio
+se o startup continua simples
+Critério de aceitação:
+
+arquivo principal curto
+responsabilidade restrita a iniciar execução
+
+----------------------------------------------------------------------------------------
+
+Task 10: Limpeza Final
+Objetivo: ajustar nomes, remover código residual e preparar base para testes.
+
+Escopo:
+
+remover duplicações
+revisar imports
+normalizar helpers privados
+garantir ausência de módulos órfãos
+Validação que eu farei:
+
+se a árvore do projeto ficou coerente
+se não há código morto evidente
+se os nomes estão consistentes
+Critério de aceitação:
+
+base pronta para evolução
+baixo acoplamento entre módulos
+
+----------------------------------------------------------------------------------------
+
+Estado final (refatoracao concluida)
+
+Arquitetura:
+  nbr12721.py          -> entrypoint (main / asyncio.run)
+  pipeline.py          -> executar_pipeline(), _resumir_lotes_documentos()
+  config.py, prompts.py, llm.py, pdf_processing.py, serialization.py,
+  cub.py, excel_writer.py, formatacao.py
+
+Tasks 1-8: extracao modular concluida.
+Task 9: entrypoint fino — validado (entregue pela Task 8).
+Task 10: formatacao.py (_brl), helper privado, tests/, README.md.
+
+Testes: python3 -m unittest discover -s tests -v

@@ -1,0 +1,14 @@
+.env
+logs/*.log
+logs/*.log.*
+!logs/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/
+src/**/__pycache__/
+data/output/
+!data/output/saida/.gitkeep
+*.egg-info/
+dist/
+build/
+.eggs/

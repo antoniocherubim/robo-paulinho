@@ -1,0 +1,9 @@
+anthropic
+openai
+claude-agent-sdk
+python-dotenv
+openpyxl
+pdfplumber
+pdf2image
+pytesseract
+Pillow
