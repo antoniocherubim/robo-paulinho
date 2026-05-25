@@ -1,15 +1,18 @@
+import asyncio
 import json
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from nbr12721.config import VALIDACAO_BLOQUEANTE
 from nbr12721.pipeline import (
+    _extrair_dados_via_llm,
     _preencher_cub_automatico,
     _registrar_validacao_dados,
     _somente_json,
     _usar_extracao_deterministica,
+    _usar_fallback_llm,
 )
 
 
@@ -157,6 +160,77 @@ class TestPipelineModes(unittest.TestCase):
 
     def test_config_validacao_bloqueante_default_bool(self):
         self.assertIsInstance(VALIDACAO_BLOQUEANTE, bool)
+
+    def test_usar_fallback_llm_por_flag(self):
+        with patch("nbr12721.pipeline.FALLBACK_LLM_SE_INVALIDO", False):
+            self.assertTrue(_usar_fallback_llm(["prog", "--fallback-llm"]))
+            self.assertFalse(_usar_fallback_llm(["prog"]))
+
+    def test_usar_fallback_llm_por_constante(self):
+        with patch("nbr12721.pipeline.FALLBACK_LLM_SE_INVALIDO", True):
+            self.assertTrue(_usar_fallback_llm(["prog"]))
+
+    def test_extrair_dados_via_llm_parseia_json(self):
+        json_llm = '{"incorporador":{"cnpj":"10.910.748/0001-85"}}'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("nbr12721.pipeline.PASTA_SAIDA", tmpdir),
+                patch(
+                    "nbr12721.pipeline.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+                patch(
+                    "nbr12721.pipeline._resumir_lotes_documentos",
+                    new_callable=AsyncMock,
+                    return_value=[{}],
+                ),
+                patch(
+                    "nbr12721.pipeline.compactar_resumos",
+                    return_value="RESUMO",
+                ),
+                patch(
+                    "nbr12721.pipeline._extrair_evidencias_criticas",
+                    return_value="",
+                ),
+                patch(
+                    "nbr12721.pipeline.chamar_llm",
+                    new_callable=AsyncMock,
+                    return_value=json_llm,
+                ),
+            ):
+                dados = asyncio.run(_extrair_dados_via_llm("texto", None))
+
+        self.assertEqual(dados["incorporador"]["cnpj"], "10.910.748/0001-85")
+
+    def test_extrair_dados_via_llm_falha_sem_resposta(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("nbr12721.pipeline.PASTA_SAIDA", tmpdir),
+                patch(
+                    "nbr12721.pipeline.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+                patch(
+                    "nbr12721.pipeline._resumir_lotes_documentos",
+                    new_callable=AsyncMock,
+                    return_value=[{}],
+                ),
+                patch(
+                    "nbr12721.pipeline.compactar_resumos",
+                    return_value="RESUMO",
+                ),
+                patch(
+                    "nbr12721.pipeline._extrair_evidencias_criticas",
+                    return_value="",
+                ),
+                patch(
+                    "nbr12721.pipeline.chamar_llm",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
+            ):
+                with self.assertRaises(RuntimeError):
+                    asyncio.run(_extrair_dados_via_llm("texto", None))
 
 
 if __name__ == "__main__":

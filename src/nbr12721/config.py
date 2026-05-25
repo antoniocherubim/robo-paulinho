@@ -92,6 +92,9 @@ ARQ_VALIDACAO_JSON = "validacao_dados.json"
 # --- Validacao de completude do JSON ---
 VALIDACAO_BLOQUEANTE = _resolver_bool_env("VALIDACAO_BLOQUEANTE", False)
 
+# --- Fallback LLM apos extracao deterministica invalida ---
+FALLBACK_LLM_SE_INVALIDO = _resolver_bool_env("FALLBACK_LLM_SE_INVALIDO", False)
+
 # --- Limites de texto (pipeline LLM) ---
 LIMITE_CHARS_LOTE = 18000
 LIMITE_CHARS_PROMPT_FINAL = 60000

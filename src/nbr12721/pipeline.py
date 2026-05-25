@@ -14,6 +14,7 @@ from .config import (
     ARQ_TEXTO_FILTRADO,
     ARQ_VALIDACAO_JSON,
     EXTRACAO_DETERMINISTICA,
+    FALLBACK_LLM_SE_INVALIDO,
     LIMITE_CHARS_PROMPT_FINAL,
     PASTA_DOCS,
     PASTA_SAIDA,
@@ -49,6 +50,11 @@ def _usar_extracao_deterministica(argv=None) -> bool:
 def _somente_json(argv=None) -> bool:
     argv = sys.argv if argv is None else argv
     return "--json-only" in argv
+
+
+def _usar_fallback_llm(argv=None) -> bool:
+    argv = sys.argv if argv is None else argv
+    return FALLBACK_LLM_SE_INVALIDO or "--fallback-llm" in argv
 
 
 def _preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
@@ -165,8 +171,61 @@ async def _resumir_lotes_documentos(textos):
     return resumos
 
 
+async def _extrair_dados_via_llm(textos: str, cub_info: dict | None) -> dict:
+    cub_ctx = formatar_cub_contexto(cub_info)
+
+    resumos_lotes = await _resumir_lotes_documentos(textos)
+    texto_resumido = compactar_resumos(resumos_lotes)
+    evidencias_criticas = _extrair_evidencias_criticas(textos)
+    if evidencias_criticas:
+        texto_resumido = (
+            f"{evidencias_criticas}\n\n"
+            f"RESUMO CONSOLIDADO DOS LOTES:\n{texto_resumido}"
+        )
+
+    os.makedirs(PASTA_SAIDA, exist_ok=True)
+    with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
+        f.write(texto_resumido)
+    logger.info("Resumo consolidado: %s chars", len(texto_resumido))
+
+    if len(texto_resumido) > LIMITE_CHARS_PROMPT_FINAL:
+        logger.warning(
+            "Resumo ainda grande (%s chars), truncando para %s",
+            len(texto_resumido),
+            LIMITE_CHARS_PROMPT_FINAL,
+        )
+        texto_resumido = texto_resumido[:LIMITE_CHARS_PROMPT_FINAL]
+
+    prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
+        "{cub_contexto}", cub_ctx
+    )
+
+    logger.info("Enviando consolidacao final para o LLM...")
+    resposta = await chamar_llm(prompt_completo)
+
+    if not resposta:
+        raise RuntimeError("LLM nao disponivel")
+
+    logger.info("Processando resposta JSON...")
+    try:
+        return parsear_json(resposta)
+    except json.JSONDecodeError as e:
+        os.makedirs(PASTA_SAIDA, exist_ok=True)
+        with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
+            f.write(resposta)
+        raise RuntimeError(f"Erro JSON da LLM: {e}") from e
+
+
+def _tratar_erro_llm(e: RuntimeError) -> None:
+    logger.error("%s", e)
+    if "LLM nao disponivel" in str(e):
+        logger.error("Instale: pip install anthropic openai claude-agent-sdk")
+        logger.error("Ou configure Claude CLI: npm install -g @anthropic-ai/claude-code")
+
+
 async def executar_pipeline():
     usar_deterministico = _usar_extracao_deterministica()
+    usar_fallback = _usar_fallback_llm()
     logger.info("=" * 60)
     logger.info("NBR 12721:2006 - PREENCHIMENTO AUTOMATICO")
     if usar_deterministico:
@@ -261,58 +320,31 @@ async def executar_pipeline():
         with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
             f.write("(modo deterministico: resumo LLM nao gerado)\n")
     else:
-        cub_ctx = formatar_cub_contexto(cub_info)
-
-        resumos_lotes = await _resumir_lotes_documentos(textos)
-        texto_resumido = compactar_resumos(resumos_lotes)
-        evidencias_criticas = _extrair_evidencias_criticas(textos)
-        if evidencias_criticas:
-            texto_resumido = (
-                f"{evidencias_criticas}\n\n"
-                f"RESUMO CONSOLIDADO DOS LOTES:\n{texto_resumido}"
-            )
-        with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
-            f.write(texto_resumido)
-        logger.info("Resumo consolidado: %s chars", len(texto_resumido))
-
-        if len(texto_resumido) > LIMITE_CHARS_PROMPT_FINAL:
-            logger.warning(
-                "Resumo ainda grande (%s chars), truncando para %s",
-                len(texto_resumido),
-                LIMITE_CHARS_PROMPT_FINAL,
-            )
-            texto_resumido = texto_resumido[:LIMITE_CHARS_PROMPT_FINAL]
-
-        prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
-            "{cub_contexto}", cub_ctx
-        )
-
-        logger.info("Enviando consolidacao final para o LLM...")
-        resposta = await chamar_llm(prompt_completo)
-
-        if not resposta:
-            logger.error("LLM nao disponivel")
-            logger.error("Instale: pip install anthropic openai claude-agent-sdk")
-            logger.error("Ou configure Claude CLI: npm install -g @anthropic-ai/claude-code")
-            sys.exit(1)
-
-        logger.info("Processando resposta JSON...")
         try:
-            dados = parsear_json(resposta)
-        except json.JSONDecodeError as e:
-            os.makedirs(PASTA_SAIDA, exist_ok=True)
-            with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
-                f.write(resposta)
-            logger.error(
-                "Erro JSON: %s | Resposta salva em %s",
-                e,
-                caminho_saida(ARQ_RESPOSTA_BRUTA),
-            )
+            dados = await _extrair_dados_via_llm(textos, cub_info)
+        except RuntimeError as e:
+            _tratar_erro_llm(e)
             sys.exit(1)
 
     _preencher_cub_automatico(dados, cub_info)
 
     resultado_validacao = _registrar_validacao_dados(dados)
+
+    if usar_deterministico and usar_fallback and not resultado_validacao["ok"]:
+        logger.warning("Validacao deterministica falhou; tentando fallback LLM...")
+        try:
+            dados = await _extrair_dados_via_llm(textos, cub_info)
+        except RuntimeError as e:
+            logger.error("Fallback LLM falhou: %s", e)
+            sys.exit(1)
+
+        _preencher_cub_automatico(dados, cub_info)
+        resultado_validacao = _registrar_validacao_dados(dados)
+        logger.info(
+            "Fallback LLM concluido; validacao final ok=%s score=%.4f",
+            resultado_validacao["ok"],
+            resultado_validacao["score"],
+        )
 
     os.makedirs(PASTA_SAIDA, exist_ok=True)
     with open(caminho_saida(ARQ_DADOS_JSON), "w", encoding="utf-8") as f:
