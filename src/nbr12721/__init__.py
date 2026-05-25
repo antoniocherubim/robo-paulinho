@@ -1,4 +1,12 @@
-"""NBR 12721:2006 — preenchimento automatico de planilha com LLM."""
-from .orchestration.pipeline import executar_pipeline
+"""NBR 12721:2006 — preenchimento automatico de planilha."""
+import asyncio
 
-__all__ = ["executar_pipeline"]
+from .orchestration.pipeline import executar_pipeline
+from .settings.logging_setup import configurar_logging
+
+__all__ = ["executar_pipeline", "main"]
+
+
+def main() -> None:
+    configurar_logging()
+    asyncio.run(executar_pipeline())

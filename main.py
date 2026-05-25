@@ -1,8 +1,5 @@
-"""Executa o pipeline a partir da raiz do projeto.
-
-Este arquivo facilita debug em IDEs: configure este `main.py` como script
-principal e use argumentos como `--skip-extracao` quando precisar.
-"""
+"""Entrypoint unico do projeto NBR 12721."""
+import asyncio
 import sys
 from pathlib import Path
 
@@ -11,7 +8,13 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from nbr12721.main import main
+from nbr12721.orchestration.pipeline import executar_pipeline
+from nbr12721.settings.logging_setup import configurar_logging
+
+
+def main() -> None:
+    configurar_logging()
+    asyncio.run(executar_pipeline())
 
 
 if __name__ == "__main__":

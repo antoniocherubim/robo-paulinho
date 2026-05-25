@@ -1,7 +1,7 @@
 import inspect
 import unittest
 
-from nbr12721.main import main
+from nbr12721 import main
 from nbr12721.orchestration.pipeline import executar_pipeline
 from nbr12721.orchestration.pipeline_llm import extrair_evidencias_criticas
 

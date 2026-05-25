@@ -300,8 +300,7 @@ reduza `OCR_DPI` para `120`.
 
 | Módulo | Responsabilidade |
 |--------|------------------|
-| `main.py` | Entrypoint do pacote (`main()` usado por debug e `python -m nbr12721`) |
-| `__main__.py` | Compatibilidade para `python -m nbr12721` |
+| `main.py` | Entrypoint unico para debug/execucao direta |
 | `logging_setup.py` | Console + arquivo `logs/*.log` (rotação) |
 | `pipeline.py` | Orquestração do fluxo |
 | `config.py` | Paths, limites, resolvers de provider/modelo |

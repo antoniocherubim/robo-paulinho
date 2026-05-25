@@ -27,7 +27,6 @@ class TestImports(unittest.TestCase):
             "nbr12721.settings",
             "nbr12721.settings.config",
             "nbr12721.settings.logging_setup",
-            "nbr12721.main",
             "nbr12721",
         ]
         for nome in modulos:

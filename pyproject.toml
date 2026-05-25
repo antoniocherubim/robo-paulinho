@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
-nbr12721 = "nbr12721.main:main"
+nbr12721 = "nbr12721:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
