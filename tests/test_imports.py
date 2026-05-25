@@ -14,12 +14,19 @@ class TestImports(unittest.TestCase):
             "nbr12721.serialization",
             "nbr12721.excel_writer",
             "nbr12721.pipeline",
+            "nbr12721.validation",
             "nbr12721.main",
             "nbr12721",
         ]
         for nome in modulos:
             with self.subTest(modulo=nome):
                 __import__(nome)
+
+    def test_validation_exporta_validar(self):
+        from nbr12721 import validation
+
+        self.assertEqual(validation.__all__, ["validar_dados_extraidos"])
+        self.assertTrue(callable(validation.validar_dados_extraidos))
 
     def test_llm_exporta_chamar_llm(self):
         from nbr12721 import llm
