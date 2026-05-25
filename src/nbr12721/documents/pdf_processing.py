@@ -2,6 +2,7 @@
 import gc
 import logging
 import os
+import re
 import sys
 import tempfile
 import time
@@ -51,6 +52,136 @@ def _fechar_imagem(img):
         img.close()
     except Exception:
         pass
+
+
+# OCR regional: crops do carimbo em pranchas grandes (fallback ou atalho)
+OCR_REGIONAL_DPI = 80
+OCR_REGIONAL_TIMEOUT = 30
+OCR_PAGINA_GRANDE_AREA = 1_500_000  # width*height em pontos PDF (pdfplumber)
+
+_REGIOES_OCR = (
+    ("direita", 0.78, 0.0, 1.0, 1.0),
+    ("inferior_direita", 0.70, 0.55, 1.0, 1.0),
+    ("inferior", 0.0, 0.70, 1.0, 1.0),
+)
+
+_RE_CORPO_PROJETO_OCR = re.compile(
+    r"APTOS?|APARTAMENTOS?|PAVIMENTOS?|PAV\.?\s*TIPO|"
+    r"TOTAL\s+DE\s+VAGAS|\d+\s*[xX×]\s*\d+\s*APTOS",
+    re.IGNORECASE,
+)
+
+
+def _ocr_texto_tem_corpo_projeto(texto: str) -> bool:
+    """Indica se o OCR full-page trouxe unidades/pavimentos/vagas."""
+    return bool(_RE_CORPO_PROJETO_OCR.search(texto))
+
+
+def _concatenar_textos_ocr(*partes: str) -> str:
+    blocos = [p.strip() for p in partes if p and p.strip()]
+    return "\n\n".join(blocos)
+
+
+def _pagina_muito_grande(pagina) -> bool:
+    try:
+        return pagina.width * pagina.height > OCR_PAGINA_GRANDE_AREA
+    except Exception:
+        return False
+
+
+def _renderizar_pagina(convert_from_path, caminho, indice, dpi, poppler_path):
+    imagens = convert_from_path(
+        caminho,
+        dpi=dpi,
+        first_page=indice,
+        last_page=indice,
+        poppler_path=poppler_path,
+        thread_count=1,
+        grayscale=OCR_GRAYSCALE,
+    )
+    if not imagens:
+        return None
+    return imagens[0]
+
+
+def _ocr_crop(img, crop_box, pytesseract, timeout):
+    crop = None
+    try:
+        crop = img.crop(crop_box)
+        return pytesseract.image_to_string(
+            crop,
+            lang=TESSERACT_LANG,
+            timeout=timeout,
+        )
+    finally:
+        _fechar_imagem(crop)
+
+
+def _ocr_regioes_pagina(convert_from_path, pytesseract, caminho, indice, poppler_path):
+    """OCR em crops fixos (carimbo lateral/inferior) para pranchas grandes."""
+    nome = os.path.basename(caminho)
+    logger.info(
+        "%s p.%s: iniciando OCR regional (dpi=%s, timeout=%ss/regiao)",
+        nome,
+        indice,
+        OCR_REGIONAL_DPI,
+        OCR_REGIONAL_TIMEOUT,
+    )
+    img = None
+    partes: list[str] = []
+    try:
+        img = _renderizar_pagina(
+            convert_from_path, caminho, indice, OCR_REGIONAL_DPI, poppler_path
+        )
+        if img is None:
+            logger.warning("%s p.%s: OCR regional sem imagem renderizada", nome, indice)
+            return ""
+
+        largura, altura = img.size
+        for nome_regiao, x0f, y0f, x1f, y1f in _REGIOES_OCR:
+            box = (
+                int(largura * x0f),
+                int(altura * y0f),
+                int(largura * x1f),
+                int(altura * y1f),
+            )
+            cw, ch = box[2] - box[0], box[3] - box[1]
+            logger.info(
+                "%s p.%s: OCR regional regiao=%s crop=%sx%s",
+                nome,
+                indice,
+                nome_regiao,
+                cw,
+                ch,
+            )
+            try:
+                texto_regiao = _ocr_crop(
+                    img, box, pytesseract, OCR_REGIONAL_TIMEOUT
+                ).strip()
+                n_chars = len(texto_regiao)
+                logger.info(
+                    "%s p.%s: OCR regional regiao=%s chars=%s",
+                    nome,
+                    indice,
+                    nome_regiao,
+                    n_chars,
+                )
+                if texto_regiao:
+                    partes.append(f"OCR_REGIAO: {nome_regiao}\n{texto_regiao}")
+            except Exception as e:
+                logger.warning(
+                    "%s p.%s: OCR regional regiao=%s falhou: %s",
+                    nome,
+                    indice,
+                    nome_regiao,
+                    e,
+                )
+            finally:
+                gc.collect()
+        return "\n\n".join(partes)
+    finally:
+        _fechar_imagem(img)
+        gc.collect()
 
 
 def _ocr_pagina_com_arquivo_temp(convert_from_path, pytesseract, caminho, indice, poppler_path):
@@ -190,8 +321,10 @@ def iterar_texto_pdf_paginas(caminho):
                         logger.warning("%s p.%s/%s: sem texto e OCR indisponivel", nome, indice, total_paginas)
                     continue
 
-                texto_ocr = ""
+                texto_full = ""
+                texto_regional = ""
                 inicio_ocr = time.monotonic()
+                pagina_grande = _pagina_muito_grande(pagina)
                 try:
                     logger.info(
                         "%s p.%s/%s: texto nativo insuficiente (%s chars); iniciando OCR",
@@ -200,30 +333,86 @@ def iterar_texto_pdf_paginas(caminho):
                         total_paginas,
                         len(texto_nativo),
                     )
-                    if OCR_USAR_ARQUIVOS_TEMP:
-                        texto_ocr = _ocr_pagina_com_arquivo_temp(
-                            convert_from_path,
-                            pytesseract,
-                            caminho,
+                    try:
+                        if OCR_USAR_ARQUIVOS_TEMP:
+                            texto_full = _ocr_pagina_com_arquivo_temp(
+                                convert_from_path,
+                                pytesseract,
+                                caminho,
+                                indice,
+                                poppler_path,
+                            )
+                        else:
+                            texto_full = _ocr_pagina_em_memoria(
+                                convert_from_path,
+                                pytesseract,
+                                caminho,
+                                indice,
+                                poppler_path,
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "%s p.%s/%s: OCR full-page falhou: %s",
+                            nome,
                             indice,
-                            poppler_path,
+                            total_paginas,
+                            e,
                         )
-                    else:
-                        texto_ocr = _ocr_pagina_em_memoria(
-                            convert_from_path,
-                            pytesseract,
-                            caminho,
+
+                    precisa_regional = (
+                        pagina_grande
+                        or not texto_full.strip()
+                        or not _ocr_texto_tem_corpo_projeto(texto_full)
+                    )
+                    if precisa_regional:
+                        motivo = (
+                            "pagina grande (complemento carimbo)"
+                            if pagina_grande
+                            else (
+                                "full-page sem corpo do projeto"
+                                if texto_full.strip()
+                                else "full-page vazio ou falhou"
+                            )
+                        )
+                        logger.info(
+                            "%s p.%s/%s: OCR regional como complemento (%s)",
+                            nome,
                             indice,
-                            poppler_path,
+                            total_paginas,
+                            motivo,
                         )
-                except Exception as e:
-                    logger.warning("%s p.%s/%s: OCR falhou: %s", nome, indice, total_paginas, e)
+                        try:
+                            texto_regional = _ocr_regioes_pagina(
+                                convert_from_path,
+                                pytesseract,
+                                caminho,
+                                indice,
+                                poppler_path,
+                            )
+                        except Exception as e2:
+                            logger.warning(
+                                "%s p.%s/%s: OCR regional falhou: %s",
+                                nome,
+                                indice,
+                                total_paginas,
+                                e2,
+                            )
                 finally:
                     gc.collect()
 
-                texto = texto_ocr.strip() or texto_nativo
+                texto_ocr = _concatenar_textos_ocr(texto_full, texto_regional)
+                texto = _concatenar_textos_ocr(texto_ocr, texto_nativo)
                 if texto.strip():
-                    origem = "OCR" if texto_ocr.strip() else "parcial"
+                    tem_full = bool(texto_full.strip())
+                    tem_regional = bool(texto_regional.strip())
+                    if tem_full and tem_regional:
+                        origem = "OCR+regional"
+                    elif tem_regional and "OCR_REGIAO:" in texto_regional:
+                        origem = "OCR_regional"
+                    elif tem_full or texto_ocr.strip():
+                        origem = "OCR"
+                    else:
+                        origem = "parcial"
                     paginas_emitidas += 1
                     if texto_ocr.strip():
                         paginas_ocr += 1

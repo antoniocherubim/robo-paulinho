@@ -5,6 +5,21 @@ from __future__ import annotations
 import re
 
 RE_DATA = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+UFS_BRASIL = frozenset(
+    {
+        "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
+        "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC",
+        "SP", "SE", "TO",
+    }
+)
+RE_PREFIXO_EVIDENCIA_ARQUIVO = re.compile(
+    r"^\[[^\]]+\]\s*",
+    re.IGNORECASE,
+)
+RE_LINHA_CIDADE_UF_REJEITADA = re.compile(
+    r"^DOCUMENTO:\s*[^\s]+\.pdf\s*$|^(?:ARQ-PL|PLA-)[^\s]*\s*$",
+    re.IGNORECASE,
+)
 RE_CIDADE_UF_LINHA = re.compile(
     r"(?<![A-Za-zÀ-ÿ])([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ \t]{2,40}?)[ \t]*[-/][ \t]*([A-Z]{2})\b",
     re.IGNORECASE,
@@ -20,6 +35,50 @@ RE_ALVARA = re.compile(
 )
 RE_TERRENO = re.compile(
     r"TERRENO\s*:\s*([\d.,]+)\s*M",
+    re.IGNORECASE,
+)
+RE_AREA_TERRENO_AT = re.compile(
+    r"(?:ÁREA|AREA)\s+TERRENO\s*\[AT\]\s*[=|:|]?\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+RE_TERRENO_M2 = re.compile(
+    r"TERRENO\s+([\d.,]+)\s*M\s*2",
+    re.IGNORECASE,
+)
+RE_PROPRIEDADE_TERRENO = re.compile(
+    r"PROPRIEDADE\s+DO\s+TERRENO",
+    re.IGNORECASE,
+)
+RE_LOCAL_CABECALHO = re.compile(
+    r"DATA\s+DO\s+PROJETO|TAXA\s+DE\s+OCUPA[CÇ][AÃ]O",
+    re.IGNORECASE,
+)
+RE_LOTE = re.compile(r"\bLOTE\b", re.IGNORECASE)
+RE_LOCAL_KEYWORDS = re.compile(
+    r"RIBEIR[AÃ]O|FAZENDA|PALHANO|LOTE|SITUAD",
+    re.IGNORECASE,
+)
+RE_SITUADO_NO = re.compile(
+    r"SITUAD[OA]\s+NO\s+(.+)",
+    re.IGNORECASE,
+)
+RE_TAXA_PERCENTUAL_FINAL = re.compile(r",\s*[\d.,]+\s*%\s*$")
+RE_PROPRIETARIO = re.compile(r"PROPRIET[AÁ]RIO", re.IGNORECASE)
+RE_YTICON = re.compile(
+    r"YTICON\s+CONSTRU[CÇ][AÃ]O\s+E\s+INCORPORA[CÇ][AÃ]O",
+    re.IGNORECASE,
+)
+RE_PAGOTTO_ADMIN = re.compile(
+    r"Processo|Aprova[cç][aã]o|Alvar[aá]|Diretoria|Matr[ií]cula",
+    re.IGNORECASE,
+)
+RE_NOME_RESP_INVALIDO = re.compile(
+    r"\b(?:Processo|PAGOTTO|CNPJ|ALVAR[AÁ]|N[°ºo.]|RESPONS[AÁ]VEL|ASSINADO|"
+    r"DIGITAL|DADOS|DIRETORIA)\b",
+    re.IGNORECASE,
+)
+RE_CPF_CNPJ_DATA_NOME = re.compile(
+    r"\b(?:CPF|CNPJ)\b|\b\d{1,2}/\d{1,2}/\d{4}\b|\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b",
     re.IGNORECASE,
 )
 RE_DESIGNACAO = re.compile(
@@ -113,10 +172,6 @@ RE_PROFISSAO_SPLIT = re.compile(
 )
 RE_PROFISSAO_NOME = re.compile(
     r"\b(?:ENGENHEIR[OA]|ARQUITET[OA])(?:\s+CIVIL|\s+URBANISTA)?\b",
-    re.IGNORECASE,
-)
-RE_NOME_RESP_INVALIDO = re.compile(
-    r"\b(?:Processo|PAGOTTO|CNPJ|ALVAR[AÁ]|N[°ºo.])\b",
     re.IGNORECASE,
 )
 RE_LOGRADOURO = re.compile(

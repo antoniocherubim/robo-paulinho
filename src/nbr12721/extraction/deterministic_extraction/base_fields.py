@@ -9,6 +9,7 @@ from .patterns import (
     PALAVRAS_DATA_CONTEXTO,
     PALAVRAS_PADRAO_R,
     RE_ALVARA,
+    RE_AREA_TERRENO_AT,
     RE_CIDADE_UF_LINHA,
     RE_CNPJ_DIGITOS,
     RE_CONTEXTO_PROFISSIONAL,
@@ -16,7 +17,12 @@ from .patterns import (
     RE_CREA_COLADO,
     RE_DATA,
     RE_DESIGNACAO,
+    RE_LINHA_CIDADE_UF_REJEITADA,
+    RE_PREFIXO_EVIDENCIA_ARQUIVO,
+    RE_PROPRIEDADE_TERRENO,
     RE_TERRENO,
+    RE_TERRENO_M2,
+    UFS_BRASIL,
 )
 from .utils import _parse_numero_br
 
@@ -80,15 +86,44 @@ def _linha_eh_contexto_profissional(linha: str) -> bool:
     return bool(RE_CONTEXTO_PROFISSIONAL.search(linha))
 
 
+def _linha_para_cidade_uf(linha: str) -> str:
+    return RE_PREFIXO_EVIDENCIA_ARQUIVO.sub("", linha.strip())
+
+
+def _pontuacao_numero_admin(valor: str) -> int:
+    """Prefere numero/ano (ex. 2457/2023); penaliza OCR colado (245712029)."""
+    v = re.sub(r"\s+", "", valor.strip())
+    if not v:
+        return -1
+    score = 0
+    if re.search(r"/20\d{2}", v):
+        score += 25
+    if re.match(r"^\d{1,6}/\d{4}$", v):
+        score += 20
+    elif "/" in v and len(v) <= 24:
+        score += 12
+    elif re.match(r"^\d{3,6}$", v):
+        score += 8
+    if len(v) >= 9 and "/" not in v:
+        score -= 20
+    if re.match(r"^\d+\.\d+\.\d+/", v):
+        score += 15
+    return score
+
+
 def _extrair_cidade_uf(texto: str) -> str:
     for linha in texto.splitlines():
-        if _linha_eh_contexto_profissional(linha):
+        linha_busca = _linha_para_cidade_uf(linha)
+        if _linha_eh_contexto_profissional(linha_busca):
             continue
-        for m in RE_CIDADE_UF_LINHA.finditer(linha):
+        if RE_LINHA_CIDADE_UF_REJEITADA.search(linha_busca):
+            continue
+        for m in RE_CIDADE_UF_LINHA.finditer(linha_busca):
             cidade = m.group(1).strip()
-            uf = m.group(2).strip()
-            if len(cidade) >= 3 and uf.isalpha():
-                return _normalizar_cidade_uf(cidade, uf)
+            uf = m.group(2).strip().upper()
+            if len(cidade) < 4 or uf not in UFS_BRASIL:
+                continue
+            return _normalizar_cidade_uf(cidade, uf)
     return ""
 
 
@@ -145,18 +180,34 @@ def _extrair_data_aprovacao(texto: str) -> str:
 
 
 def _extrair_num_alvara(texto: str) -> str:
-    m = RE_ALVARA.search(texto)
-    if not m:
+    melhor_valor = ""
+    melhor_pontuacao = -1
+    for m in RE_ALVARA.finditer(texto):
+        valor = re.sub(r"\s+", "", m.group(1))
+        pontuacao = _pontuacao_numero_admin(valor)
+        if pontuacao > melhor_pontuacao:
+            melhor_pontuacao = pontuacao
+            melhor_valor = valor
+    if melhor_pontuacao < 0:
         return ""
-    valor = re.sub(r"\s+", "", m.group(1))
-    return valor.replace(" ", "")
+    return melhor_valor
 
 
 def _extrair_area_terreno(texto: str) -> float:
-    m = RE_TERRENO.search(texto)
-    if not m:
-        return 0.0
-    return _parse_numero_br(m.group(1))
+    for padrao in (RE_AREA_TERRENO_AT, RE_TERRENO):
+        m = padrao.search(texto)
+        if m:
+            valor = _parse_numero_br(m.group(1))
+            if valor > 0:
+                return valor
+    for m in RE_TERRENO_M2.finditer(texto):
+        inicio = max(0, m.start() - 30)
+        if RE_PROPRIEDADE_TERRENO.search(texto[inicio : m.start()]):
+            continue
+        valor = _parse_numero_br(m.group(1))
+        if valor > 0:
+            return valor
+    return 0.0
 
 
 def _detectar_padrao_r(texto: str) -> bool:

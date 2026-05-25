@@ -16,6 +16,20 @@ __all__ = [
 ]
 
 
+def _tipo_cub_residencial_por_pavimentos(num_pavimentos: int, valores: dict) -> str:
+    """Regra pragmatica: >=8 pav. prefere R16-N, depois R8-N, R1-N, R4-N."""
+    if num_pavimentos <= 0:
+        return ""
+    if num_pavimentos >= 8:
+        ordem = ("R16-N", "R8-N", "R1-N", "R4-N")
+    else:
+        ordem = ("R1-N", "R4-N", "R8-N", "R16-N")
+    for tipo in ordem:
+        if tipo in valores:
+            return tipo
+    return ""
+
+
 def preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
     if not cub_info or not cub_info.get("valores"):
         logger.info("CUB automatico nao preenchido: informacoes CUB indisponiveis")
@@ -26,26 +40,45 @@ def preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
         return
     pp = dados.get("projeto", {}).get("projetoPadrao", {})
     pp3 = q3.get("projetoPadrao", {})
-    candidatos = [
-        str(pp3.get("padrao", "")).strip().upper(),
-        "CSL-8" if pp.get("CS") else "",
-        "R4-N" if pp.get("R") else "",
-        "R1-N" if pp.get("R") else "",
-    ]
-    tipo = next((t for t in candidatos if t and t in cub_info["valores"]), "")
+    valores = cub_info["valores"]
+    candidatos: list[str] = []
+    padrao_q3 = str(pp3.get("padrao", "")).strip().upper()
+    if padrao_q3:
+        candidatos.append(padrao_q3)
+    if pp.get("CS"):
+        candidatos.append("CSL-8")
+    if pp.get("R"):
+        try:
+            num_pav = int(dados.get("projeto", {}).get("numPavimentos") or 0)
+        except (TypeError, ValueError):
+            num_pav = 0
+        if num_pav <= 0:
+            logger.warning(
+                "CUB residencial nao preenchido: numPavimentos ausente ou zero "
+                "(regra por pavimentos exige dado conhecido)"
+            )
+        else:
+            tipo_res = _tipo_cub_residencial_por_pavimentos(num_pav, valores)
+            if tipo_res:
+                candidatos.append(tipo_res)
+            if num_pav < 8:
+                candidatos.extend(["R1-N", "R4-N"])
+    tipo = next((t for t in candidatos if t and t in valores), "")
     if not tipo:
         logger.warning(
             "CUB automatico nao preenchido: nenhum tipo compativel encontrado | candidatos=%s | disponiveis=%s",
             [t for t in candidatos if t],
-            sorted(cub_info["valores"].keys()),
+            sorted(valores.keys()),
         )
         return
-    q3["valorCub"] = cub_info["valores"][tipo]
+    q3["valorCub"] = valores[tipo]
     q3["sindicato"] = cub_info["sindicato"]
     q3["mesCub"] = cub_info["mesAno"]
+    num_pav_log = dados.get("projeto", {}).get("numPavimentos", 0)
     logger.info(
-        "CUB preenchido automaticamente: %s = R$ %s (%s)",
+        "CUB residencial selecionado por numPavimentos: tipo=%s numPavimentos=%s valor=R$ %s (%s)",
         tipo,
+        num_pav_log,
         formatar_brl(q3["valorCub"]),
         cub_info["mesAno"],
     )

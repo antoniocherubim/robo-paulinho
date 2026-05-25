@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from .base_fields import _texto_menciona_crea
+from .base_fields import _pontuacao_numero_admin, _texto_menciona_crea
 from .patterns import (
     RE_CEP,
     RE_CORTE_MARCADOR_ADMIN,
@@ -12,16 +12,25 @@ from .patterns import (
     RE_EMAIL,
     RE_ENDERECO_OBRA,
     RE_INCORPORADOR_ROTULO,
+    RE_LOCAL_CABECALHO,
+    RE_LOCAL_KEYWORDS,
     RE_LOCAL_OBRA,
     RE_LOGRADOURO,
+    RE_LOTE,
     RE_NOME_EDIFICIO_ROTULO,
     RE_NOME_RESP_INVALIDO,
     RE_PAGOTTO,
+    RE_PAGOTTO_ADMIN,
     RE_PROCESSO_APROVACAO,
     RE_PROFISSAO_NOME,
     RE_PROFISSAO_SPLIT,
+    RE_PROPRIETARIO,
     RE_SITUADO,
+    RE_SITUADO_NO,
+    RE_TAXA_PERCENTUAL_FINAL,
     RE_TEL,
+    RE_YTICON,
+    RE_CPF_CNPJ_DATA_NOME,
 )
 from .utils import _limpar_texto_campo, _normalizar_linha_ocr
 
@@ -37,21 +46,108 @@ def _eh_apenas_cidade_uf(texto: str) -> bool:
     )
 
 
+def _local_candidato_invalido(valor: str) -> bool:
+    if not valor or _eh_apenas_cidade_uf(valor):
+        return True
+    if RE_LOCAL_CABECALHO.search(valor) and not RE_LOCAL_KEYWORDS.search(valor):
+        return True
+    return False
+
+
+def _limpar_local_obra(valor: str) -> str:
+    limpo = _limpar_texto_campo(valor)
+    limpo = RE_TAXA_PERCENTUAL_FINAL.sub("", limpo).strip(" ,;")
+    limpo = re.sub(r",?\s*[°º]\s*,?", ", ", limpo)
+    limpo = re.sub(r",\s*,", ", ", limpo)
+    limpo = re.sub(r"\s+", " ", limpo).strip(" ,;")
+    return limpo
+
+
+def _pontuacao_local_consolidado(valor: str) -> int:
+    if not valor:
+        return -1
+    score = 0
+    if RE_LOTE.search(valor):
+        score += 12
+    if RE_LOCAL_KEYWORDS.search(valor):
+        score += 6
+    if re.search(r"\bLOTE\s+\d", valor, re.IGNORECASE):
+        score += 4
+    lixo = len(re.findall(r"[—\-]{2,}|[^\w\s,./À-ÿ-]{2,}", valor, re.IGNORECASE))
+    score -= lixo * 5
+    score -= max(0, len(valor) - 180) // 20
+    return score
+
+
+def _consolidar_lote_situado(linhas: list[str], inicio: int) -> str:
+    parte_lote = ""
+    parte_situado = ""
+    j_inicio = max(0, inicio - 2)
+    for j in range(j_inicio, min(inicio + 4, len(linhas))):
+        linha_n = _normalizar_linha_ocr(linhas[j])
+        if _eh_apenas_cidade_uf(linha_n):
+            continue
+        if RE_LOTE.search(linha_n) and not parte_lote:
+            parte_lote = _limpar_local_obra(linha_n)
+        m_sit = RE_SITUADO_NO.search(linha_n)
+        if m_sit:
+            parte_situado = _limpar_local_obra(m_sit.group(1))
+    if parte_lote and parte_situado:
+        return _limpar_local_obra(f"{parte_lote}, {parte_situado}")
+    if parte_lote:
+        return parte_lote
+    if parte_situado:
+        return parte_situado
+    return ""
+
+
+def _limpar_nome_incorporador(valor: str) -> str:
+    nome = _cortar_nome_incorporador(valor)
+    nome = re.sub(r"\s+\d{10,}.*$", "", nome).strip()
+    return nome
+
+
 def _extrair_local_construcao(texto: str) -> str:
-    for linha in texto.splitlines():
+    linhas = texto.splitlines()
+    melhor_consolidado = ""
+    melhor_pontuacao = -1
+    for i, linha in enumerate(linhas):
         linha_n = _normalizar_linha_ocr(linha)
+        if RE_LOTE.search(linha_n) or RE_SITUADO_NO.search(linha_n):
+            consolidado = _consolidar_lote_situado(linhas, i)
+            if not consolidado:
+                continue
+            pontuacao = _pontuacao_local_consolidado(consolidado)
+            if pontuacao > melhor_pontuacao:
+                melhor_pontuacao = pontuacao
+                melhor_consolidado = consolidado
+    if melhor_consolidado:
+        return melhor_consolidado
+
+    for i, linha in enumerate(linhas):
+        linha_n = _normalizar_linha_ocr(linha)
+        if not (
+            RE_LOCAL_OBRA.search(linha_n)
+            or RE_ENDERECO_OBRA.search(linha_n)
+            or RE_LOCAL_CABECALHO.search(linha_n)
+        ):
+            continue
         for padrao in (RE_LOCAL_OBRA, RE_ENDERECO_OBRA):
             m = padrao.search(linha_n)
             if m:
-                valor = _limpar_texto_campo(m.group(1))
-                if valor and not _eh_apenas_cidade_uf(valor):
+                valor = _limpar_local_obra(m.group(1))
+                if valor and not _local_candidato_invalido(valor):
                     return valor
-    for linha in texto.splitlines():
+        consolidado = _consolidar_lote_situado(linhas, i + 1)
+        if consolidado:
+            return consolidado
+
+    for linha in linhas:
         linha_n = _normalizar_linha_ocr(linha)
         m = RE_SITUADO.match(linha_n)
         if m:
-            valor = _limpar_texto_campo(m.group(1))
-            if valor and not _eh_apenas_cidade_uf(valor):
+            valor = _limpar_local_obra(m.group(1))
+            if valor and not _local_candidato_invalido(valor):
                 return valor
     return ""
 
@@ -82,15 +178,71 @@ def _nome_antes_profissao(linha: str, *, somente_engenheiro_arquiteto: bool = Fa
     return antes
 
 
+def _nome_parece_lixo(nome: str) -> bool:
+    if not nome:
+        return True
+    if "*" in nome or "@" in nome:
+        return True
+    letras = len(re.findall(r"[A-Za-zÀ-ÿ]", nome, re.IGNORECASE))
+    simbolos = len(re.findall(r"[^A-Za-zÀ-ÿ0-9\s]", nome))
+    palavras = [p for p in nome.split() if re.search(r"[A-Za-zÀ-ÿ]", p, re.IGNORECASE)]
+    if len(palavras) < 2 or letras < 8:
+        return True
+    if simbolos > letras * 0.15:
+        return True
+    curtas = sum(1 for p in palavras if len(p) <= 3)
+    if curtas >= len(palavras) - 1:
+        return True
+    return False
+
+
+def _pontuacao_legibilidade_nome(linha: str) -> tuple[int, int, int]:
+    """Maior pontuacao = mais legivel (letras, -simbolos, -penalidades)."""
+    limpo = _limpar_texto_campo(linha)
+    if _nome_candidato_invalido(limpo):
+        return (-1, 0, 0)
+    if RE_CPF_CNPJ_DATA_NOME.search(limpo):
+        return (-1, 0, 0)
+    palavras = [p for p in limpo.split() if re.search(r"[A-Za-zÀ-ÿ]", p, re.IGNORECASE)]
+    if len(palavras) < 2:
+        return (-1, 0, 0)
+    letras = len(re.findall(r"[A-Za-zÀ-ÿ]", limpo, re.IGNORECASE))
+    simbolos = len(re.findall(r"[^A-Za-zÀ-ÿ0-9\s]", limpo))
+    return (letras - simbolos * 2, letras, -len(palavras))
+
+
+def _melhor_nome_linhas_anteriores(linhas: list[str], indice_crea: int) -> str:
+    candidatos: list[tuple[tuple[int, int, int], str]] = []
+    for offset in range(1, 4):
+        idx = indice_crea - offset
+        if idx < 0:
+            break
+        linha = linhas[idx]
+        if re.search(r"CREA|CAU", linha, re.IGNORECASE):
+            continue
+        pontuacao = _pontuacao_legibilidade_nome(linha)
+        if pontuacao[0] < 0:
+            continue
+        nome = _limpar_texto_campo(linha)
+        candidatos.append((pontuacao, nome))
+    if not candidatos:
+        return ""
+    candidatos.sort(key=lambda x: x[0], reverse=True)
+    return candidatos[0][1]
+
+
 def _extrair_responsavel_nome(texto: str, crea: str = "") -> str:
     if _texto_menciona_crea(texto):
-        for linha in texto.splitlines():
-            if re.search(r"CREA", linha, re.IGNORECASE):
-                nome = _nome_antes_profissao(
-                    linha, somente_engenheiro_arquiteto=True
-                )
-                if nome:
-                    return nome
+        linhas = texto.splitlines()
+        for i, linha in enumerate(linhas):
+            if not re.search(r"CREA", linha, re.IGNORECASE):
+                continue
+            nome = _nome_antes_profissao(linha, somente_engenheiro_arquiteto=True)
+            if nome and not _nome_parece_lixo(nome):
+                return nome
+            nome_melhor = _melhor_nome_linhas_anteriores(linhas, i)
+            if nome_melhor:
+                return nome_melhor
         return ""
     for linha in texto.splitlines():
         if re.search(r"CAU", linha, re.IGNORECASE):
@@ -123,16 +275,38 @@ def _cortar_nome_incorporador(valor: str) -> str:
 
 
 def _extrair_incorporador_nome(texto: str) -> str:
-    for linha in texto.splitlines():
+    linhas = texto.splitlines()
+    for i, linha in enumerate(linhas):
+        if RE_PROPRIETARIO.search(linha):
+            m = RE_INCORPORADOR_ROTULO.search(linha)
+            if m:
+                nome = _limpar_nome_incorporador(m.group(1))
+                if (
+                    nome
+                    and len(nome) > 2
+                    and nome not in (":", "-", "–", "—")
+                    and not RE_PAGOTTO_ADMIN.search(linha)
+                ):
+                    return nome
+            for j in range(i + 1, min(i + 3, len(linhas))):
+                prox = _limpar_texto_campo(linhas[j])
+                if RE_YTICON.search(prox):
+                    return _limpar_nome_incorporador(prox)
+    for linha in linhas:
+        if RE_YTICON.search(linha):
+            return _limpar_nome_incorporador(linha)
+    for linha in linhas:
         m = RE_INCORPORADOR_ROTULO.search(linha)
         if m:
-            nome = _cortar_nome_incorporador(m.group(1))
-            if nome:
+            nome = _limpar_nome_incorporador(m.group(1))
+            if nome and not RE_PAGOTTO_ADMIN.search(linha):
                 return nome
-    for linha in texto.splitlines():
+    for linha in linhas:
+        if RE_PAGOTTO_ADMIN.search(linha):
+            continue
         m = RE_PAGOTTO.search(linha)
         if m:
-            nome = _cortar_nome_incorporador(m.group(1))
+            nome = _limpar_nome_incorporador(m.group(1))
             if nome:
                 return nome
     return ""
@@ -171,10 +345,17 @@ def _extrair_nome_edificio(texto: str, designacao: str = "") -> str:
 
 
 def _extrair_processo_aprovacao(texto: str) -> str:
-    m = RE_PROCESSO_APROVACAO.search(texto)
-    if not m:
+    melhor_numero = ""
+    melhor_pontuacao = -1
+    for m in RE_PROCESSO_APROVACAO.finditer(texto):
+        numero = re.sub(r"\s+", "", m.group(1))
+        pontuacao = _pontuacao_numero_admin(numero)
+        if pontuacao > melhor_pontuacao:
+            melhor_pontuacao = pontuacao
+            melhor_numero = numero
+    if melhor_pontuacao < 0:
         return ""
-    return _limpar_texto_campo(f"Processo Aprovação nº {m.group(1)}")
+    return _limpar_texto_campo(f"Processo Aprovação nº {melhor_numero}")
 
 
 def _montar_outras_indicacoes(dados: dict, texto: str) -> str:

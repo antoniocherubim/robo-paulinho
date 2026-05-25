@@ -275,7 +275,94 @@ CNPJ10.910.7480001-85
             "Processo Aprovação nº 19.021.125875/2023-06 PAGOTTO _ MARCELO PAGOTTO"
         )
         dados = extrair_dados_deterministico(texto)
-        self.assertEqual(dados["incorporador"]["nome"], "MARCELO PAGOTTO")
+        self.assertEqual(dados["incorporador"]["nome"], "")
+
+    def test_cidade_uf_ignora_nome_arquivo_arq_pl(self):
+        texto = """
+[AY0410-ARQ-PL-0006.pdf] DOCUMENTO: AY0410-ARQ-PL-0006
+LONDRINA-PR
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["cidadeUf"], "Londrina-PR")
+
+    def test_cidade_uf_com_prefixo_evidencia_na_mesma_linha(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_cidade_uf,
+        )
+
+        texto = "[AY0410-ARQ-PL-0006.pdf] LONDRINA-PR"
+        self.assertEqual(_extrair_cidade_uf(texto), "Londrina-PR")
+
+    def test_alvara_prefere_formato_com_barra(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_num_alvara,
+        )
+
+        texto = "ALVARÁ: 245712029\nNº de ALVARÁ: 2457/2023"
+        self.assertEqual(_extrair_num_alvara(texto), "2457/2023")
+
+    def test_area_terreno_at_carimbo(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_area_terreno,
+        )
+
+        self.assertAlmostEqual(
+            _extrair_area_terreno("ÁREA TERRENO [AT] 6.956,97"), 6956.97
+        )
+        self.assertAlmostEqual(
+            _extrair_area_terreno("| t ÁREA TERRENO [AT]| 6.956,97"), 6956.97
+        )
+
+    def test_local_nao_aceita_cabecalho_taxa(self):
+        texto = """
+LOCAL DA OBRA DATA DO PROJETO TAXA DE OCUPAÇÃO
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["localConstrucao"], "")
+
+    def test_local_consolida_lote_e_situado(self):
+        texto = """
+LOCAL DA OBRA DATA DO PROJETO TAXA DE OCUPAÇÃO
+LOTE 101/A, DA SUBDIVISÃO DO LOTE 101 REMANESCENTE
+SITUADO NO RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO, 61,77%
+LONDRINA-PR
+"""
+        dados = extrair_dados_deterministico(texto)
+        local = dados["projeto"]["localConstrucao"]
+        self.assertIn("LOTE 101/A", local)
+        self.assertIn("RIBEIRÃO DA ESPERANÇA", local)
+        self.assertNotIn("61,77%", local)
+        self.assertNotIn("Londrina", local)
+
+    def test_responsavel_nome_ocr_lixo_busca_linha_legivel(self):
+        texto = """
+ZON * ZON vo
+IVANI GONÇALVES DA SILVA MARIANO
+DA SILVA GONCALVES DA SILVA
+ENGENHEIRA CIVIL - CREA PR-27711/D
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["responsavel"]["nome"],
+            "IVANI GONÇALVES DA SILVA MARIANO",
+        )
+
+    def test_responsavel_nao_aceita_zon_lixo(self):
+        texto = "ZON * ZON vo ENGENHEIRA CIVIL - CREA PR-27711/D"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["responsavel"]["nome"], "")
+
+    def test_incorporador_yticon_proprietario(self):
+        texto = """
+PROPRIETÁRIO:
+YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA.
+CNPJ 10.910.748/0001-85
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["incorporador"]["nome"],
+            "YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA.",
+        )
 
     def test_extrai_nome_edificio_por_rotulo(self):
         texto = "NOME DO EDIFÍCIO: RESIDENCIAL ALPHA"

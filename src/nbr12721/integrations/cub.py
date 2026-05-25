@@ -20,7 +20,67 @@ URL_FALLBACK = (
     "6989e713fc75525c1c421c66_2026_02_CUB.pdf"
 )
 
-__all__ = ["buscar_cub_sinduscon", "formatar_cub_contexto"]
+__all__ = ["buscar_cub_sinduscon", "formatar_cub_contexto", "extrair_valores_cub"]
+
+_TIPOS_CUB_LITERAL = [
+    "R1-B", "R1-N", "R1-A", "R1-AL",
+    "R4-B", "R4-N", "R4-A", "R4-AL",
+    "PP-4", "PP-B", "PIS",
+    "CSL-8", "CSL-16", "CAL-8",
+    "GI", "GI-P", "GI-G",
+]
+
+_RESIDENCIAL_TRIPLO = (
+    ("R-1", "R1"),
+    ("PP-4", "PP4"),
+    ("R-8", "R8"),
+    ("R-16", "R16"),
+)
+
+
+def _parse_valor_cub_br(raw: str) -> float | None:
+    try:
+        return float(raw.replace(".", "").replace(" ", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _parsear_linhas_residencial_tripla(texto: str) -> dict[str, float]:
+    """Linha residencial: R-1 v1 ... R-1 v2 ... R-1 v3 -> R1-B, R1-N, R1-A."""
+    valores: dict[str, float] = {}
+    sufixos = ("B", "N", "A")
+    for linha in texto.splitlines():
+        linha_limpa = re.sub(r"\s+", " ", linha.strip())
+        for rotulo, prefixo in _RESIDENCIAL_TRIPLO:
+            nums = re.findall(
+                rf"{re.escape(rotulo)}\s+([\d.,]+)",
+                linha_limpa,
+                re.IGNORECASE,
+            )
+            if len(nums) < 3:
+                continue
+            for sufixo, raw in zip(sufixos, nums[:3]):
+                valor = _parse_valor_cub_br(raw)
+                if valor is not None:
+                    valores[f"{prefixo}-{sufixo}"] = valor
+    return valores
+
+
+def extrair_valores_cub(texto: str) -> dict[str, float]:
+    """Parseia valores CUB do texto do PDF (testavel sem HTTP)."""
+    valores: dict[str, float] = {}
+    for tipo in _TIPOS_CUB_LITERAL:
+        m = re.search(
+            rf"\b{re.escape(tipo)}\b[:\s]+(?:R\$\s*)?(\d{{1,3}}(?:[.\s]\d{{3}})*,\d{{2}})",
+            texto,
+            re.IGNORECASE,
+        )
+        if m:
+            valor = _parse_valor_cub_br(m.group(1))
+            if valor is not None:
+                valores[tipo] = valor
+    valores.update(_parsear_linhas_residencial_tripla(texto))
+    return valores
 
 
 def buscar_cub_sinduscon():
@@ -87,28 +147,9 @@ def buscar_cub_sinduscon():
         logger.error("PDF CUB sem texto extraivel")
         return None
 
-    # --- 4. Parse dos valores CUB por tipo ---
-    tipos_cub = [
-        "R1-B", "R1-N", "R1-A", "R1-AL",
-        "R4-B", "R4-N", "R4-A", "R4-AL",
-        "PP-4", "PP-B", "PIS",
-        "CSL-8", "CSL-16", "CAL-8",
-        "GI", "GI-P", "GI-G",
-    ]
-    valores = {}
-    for tipo in tipos_cub:
-        m = re.search(
-            rf'\b{re.escape(tipo)}\b[:\s]+(?:R\$\s*)?(\d{{1,3}}(?:[.\s]\d{{3}})*,\d{{2}})',
-            texto, re.IGNORECASE
-        )
-        if m:
-            try:
-                valores[tipo] = float(
-                    m.group(1).replace(".", "").replace(" ", "").replace(",", ".")
-                )
-            except: pass
+    valores = extrair_valores_cub(texto)
 
-    # --- 5. Mes/ano de referencia ---
+    # --- 4. Mes/ano de referencia ---
     mes_ano = ""
     m = re.search(
         r'(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto'

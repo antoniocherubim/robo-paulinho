@@ -196,6 +196,34 @@ OPENAI_API_KEY=sk-...
 
 Paths relativos no `.env` resolvem a partir da **raiz do projeto**, não do diretório atual.
 
+## Decisões técnicas a validar
+
+Esta seção registra critérios automáticos que podem depender de interpretação técnica
+ou validação por engenheiro civil. Eles devem ser revisados antes de tratar a planilha
+como versão final para uso profissional.
+
+### CUB residencial por número de pavimentos
+
+Critério provisório: quando o projeto for residencial (`projeto.projetoPadrao.R=true`)
+e o CUB do Sinduscon vier no formato residencial por padrão baixo/normal/alto, o sistema
+seleciona automaticamente o padrão normal mais compatível com o porte do edifício.
+
+Regra proposta para validação:
+
+| Condição | Tipo CUB preferido | Fallbacks |
+|----------|--------------------|-----------|
+| Residencial com `numPavimentos >= 8` | `R16-N` | `R8-N`, `R1-N`, `R4-N` |
+| Residencial com menos de 8 pavimentos | `R8-N` ou `R1-N` conforme disponibilidade | `R4-N` |
+
+Motivo: no conjunto de PDFs atual o empreendimento é residencial multifamiliar vertical,
+com cerca de 21 pavimentos e 320 unidades. O PDF CUB atual do Sinduscon Norte PR apresenta
+tipologias residenciais como `R-1`, `R-8` e `R-16` em colunas de padrão baixo, normal e alto,
+em vez de chaves antigas como `R4-N`.
+
+Status: **a validar com engenheiro civil**. A seleção automática é pragmática para viabilizar
+o preenchimento mínimo, mas pode precisar ser ajustada conforme enquadramento normativo,
+características do empreendimento ou orientação profissional.
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.
