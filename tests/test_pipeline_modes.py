@@ -13,6 +13,7 @@ from nbr12721.orchestration.pipeline_modes import (
     usar_fallback_llm,
 )
 from nbr12721.orchestration.pipeline_postprocess import (
+    preencher_derivados_seguros,
     preencher_cub_automatico,
     registrar_validacao_dados,
 )
@@ -127,6 +128,14 @@ class TestPipelineModes(unittest.TestCase):
         }
         preencher_cub_automatico(dados, cub_info)
         self.assertEqual(dados["quadro3"]["valorCub"], 999)
+
+    def test_preencher_derivados_seguros_garagens(self):
+        dados = {
+            "projeto": {"vagasComum": 72, "vagasAcessorio": "50"},
+            "quadro5": {"garagens": ""},
+        }
+        preencher_derivados_seguros(dados)
+        self.assertEqual(dados["quadro5"]["garagens"], "72 vagas comuns; 50 vagas duplas")
 
     def test_registrar_validacao_dados_salva_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:

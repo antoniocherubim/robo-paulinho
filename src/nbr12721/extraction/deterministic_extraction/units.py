@@ -89,7 +89,10 @@ def _extrair_num_pavimentos(texto: str) -> int:
     base = 0
     m_intervalo = RE_INTERVALO_PAV.search(texto)
     if m_intervalo:
-        base = max(int(m_intervalo.group(1)), int(m_intervalo.group(2)))
+        base = max(
+            _normalizar_numero_pavimento_ocr(m_intervalo.group(1)),
+            _normalizar_numero_pavimento_ocr(m_intervalo.group(2)),
+        )
     else:
         m_total = RE_N_PAVIMENTOS.search(texto)
         if m_total:
@@ -104,6 +107,13 @@ def _extrair_num_pavimentos(texto: str) -> int:
     if RE_COBERTURA.search(texto):
         extra += 1
     return base + extra
+
+
+def _normalizar_numero_pavimento_ocr(valor: str) -> int:
+    numero = int(valor)
+    if numero >= 100 and valor.endswith("2"):
+        return int(valor[:-1])
+    return numero
 
 
 def _extrair_vagas_comuns(texto: str) -> int:

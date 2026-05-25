@@ -63,11 +63,11 @@ RE_TERREO = re.compile(
 )
 RE_COBERTURA = re.compile(r"\bCOBERTURA\b", re.IGNORECASE)
 RE_VAGAS_COMUNS = re.compile(
-    r"TOTAL\s+DE\s+VAGAS\s+COMUNS?\s*:?\s*(\d+)",
+    r"TOTAL\s+DE\s+VAGAS\s+COMUNS?\s*[:.]?\s*(\d+)",
     re.IGNORECASE,
 )
 RE_VAGAS_DUPLAS = re.compile(
-    r"TOTAL\s+DE\s+VAGAS\s+DUPLAS?\s*:?\s*(\d+)",
+    r"TOTAL\s+DE\s+VAGAS\s+DUPLAS?\s*[:.]?\s*(\d+)",
     re.IGNORECASE,
 )
 RE_APTOS_POR_PAV = re.compile(

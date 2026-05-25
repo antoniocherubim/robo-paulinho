@@ -15,7 +15,7 @@ from .patterns import (
     RE_INTERVALO_PAV,
     RE_PAV_TIPO_LINHA,
 )
-from .units import _coletar_unidades
+from .units import _coletar_unidades, _normalizar_numero_pavimento_ocr
 from .utils import _parse_numero_br
 
 
@@ -61,7 +61,11 @@ def _extrair_qtd_pavimentos_tipo(texto: str) -> int:
         if not RE_PAV_TIPO_LINHA.search(linha):
             continue
         for m in RE_INTERVALO_PAV.finditer(linha):
-            max_qtd = max(max_qtd, int(m.group(1)), int(m.group(2)))
+            max_qtd = max(
+                max_qtd,
+                _normalizar_numero_pavimento_ocr(m.group(1)),
+                _normalizar_numero_pavimento_ocr(m.group(2)),
+            )
     return max_qtd
 
 

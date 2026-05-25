@@ -10,6 +10,7 @@ from ..settings.config import ARQ_VALIDACAO_JSON, PASTA_SAIDA, caminho_saida
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "preencher_derivados_seguros",
     "preencher_cub_automatico",
     "registrar_validacao_dados",
 ]
@@ -43,7 +44,39 @@ def preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
     )
 
 
+def preencher_derivados_seguros(dados: dict) -> None:
+    """Completa campos derivados sem inventar dados externos ao JSON."""
+    _preencher_garagens_quadro5(dados)
+
+
+def _preencher_garagens_quadro5(dados: dict) -> None:
+    q5 = dados.get("quadro5")
+    projeto = dados.get("projeto")
+    if not isinstance(q5, dict) or not isinstance(projeto, dict):
+        return
+    if q5.get("garagens"):
+        return
+
+    partes: list[str] = []
+    vagas_comuns = _inteiro_positivo(projeto.get("vagasComum"))
+    vagas_duplas = _inteiro_positivo(projeto.get("vagasAcessorio"))
+    if vagas_comuns > 0:
+        partes.append(f"{vagas_comuns} vagas comuns")
+    if vagas_duplas > 0:
+        partes.append(f"{vagas_duplas} vagas duplas")
+    q5["garagens"] = "; ".join(partes)
+
+
+def _inteiro_positivo(valor) -> int:
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return 0
+    return numero if numero > 0 else 0
+
+
 def registrar_validacao_dados(dados: dict) -> dict:
+    preencher_derivados_seguros(dados)
     resultado = validar_dados_extraidos(dados)
 
     os.makedirs(PASTA_SAIDA, exist_ok=True)

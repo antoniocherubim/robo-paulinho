@@ -158,6 +158,16 @@ COBERTURA
         self.assertEqual(dados["projeto"]["numPavimentos"], 22)
         self.assertEqual(dados["quadro5"]["numPavimentos"], "22")
 
+    def test_normaliza_pavimento_ocr_20_graus_como_202(self):
+        texto = """
+PAVIMENTO TÉRREO
+(1º AO 202) PAV. TIPO - 66,02 X 160 APTOS
+COBERTURA
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["numPavimentos"], 22)
+        self.assertEqual(dados["quadro1"]["pavimentos"][0]["qtdPavimentos"], 20)
+
     def test_extrai_vagas_comuns_e_duplas_maior_valor(self):
         texto = """
 TOTAL DE VAGAS COMUNS: 50 VAGAS
@@ -172,6 +182,15 @@ TOTAL DE VAGAS DUPLAS: 13 VAGAS
             dados["quadro5"]["garagens"],
             "55 vagas comuns; 21 vagas duplas",
         )
+
+    def test_extrai_vagas_com_separador_ponto(self):
+        texto = """
+TOTAL DE VAGAS COMUNS. 72 VAGAS
+TOTAL DE VAGAS DUPLAS. 50 VAGAS
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["vagasComum"], 72)
+        self.assertEqual(dados["projeto"]["vagasAcessorio"], 50)
 
     def test_quadro5_copia_dados_basicos(self):
         texto = """
