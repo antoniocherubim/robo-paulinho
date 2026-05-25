@@ -12,11 +12,13 @@ from .config import (
     ARQ_RESUMOS_LOTES,
     ARQ_TEXTO_EXTRAIDO,
     ARQ_TEXTO_FILTRADO,
+    ARQ_VALIDACAO_JSON,
     EXTRACAO_DETERMINISTICA,
     LIMITE_CHARS_PROMPT_FINAL,
     PASTA_DOCS,
     PASTA_SAIDA,
     PLANILHA,
+    VALIDACAO_BLOQUEANTE,
     caminho_saida,
 )
 from .cub import buscar_cub_sinduscon, formatar_cub_contexto
@@ -32,6 +34,7 @@ from .pdf_processing import (
 )
 from .prompts import PROMPT_EXTRAIR, PROMPT_RESUMIR_LOTE
 from .serialization import compactar_resumos, parsear_json
+from .validation import validar_dados_extraidos
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,32 @@ def _preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
         formatar_brl(q3["valorCub"]),
         cub_info["mesAno"],
     )
+
+
+def _registrar_validacao_dados(dados: dict) -> dict:
+    resultado = validar_dados_extraidos(dados)
+
+    os.makedirs(PASTA_SAIDA, exist_ok=True)
+    with open(caminho_saida(ARQ_VALIDACAO_JSON), "w", encoding="utf-8") as f:
+        json.dump(resultado, f, ensure_ascii=False, indent=2)
+
+    logger.info(
+        "Validacao JSON: ok=%s score=%.4f",
+        resultado["ok"],
+        resultado["score"],
+    )
+
+    if resultado["criticos_faltantes"]:
+        logger.warning("Criticos faltantes:")
+        for item in resultado["criticos_faltantes"]:
+            logger.warning("  - %s", item)
+
+    if resultado["avisos"]:
+        logger.info("Avisos de validacao:")
+        for item in resultado["avisos"]:
+            logger.info("  - %s", item)
+
+    return resultado
 
 
 def _extrair_evidencias_criticas(textos, limite_chars=12000):
@@ -283,6 +312,8 @@ async def executar_pipeline():
 
     _preencher_cub_automatico(dados, cub_info)
 
+    resultado_validacao = _registrar_validacao_dados(dados)
+
     os.makedirs(PASTA_SAIDA, exist_ok=True)
     with open(caminho_saida(ARQ_DADOS_JSON), "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
@@ -317,6 +348,10 @@ async def executar_pipeline():
         logger.info("Modo --json-only: planilha nao sera preenchida.")
         return
 
+    if VALIDACAO_BLOQUEANTE and not resultado_validacao["ok"]:
+        logger.error("Validacao bloqueante falhou; planilha nao sera preenchida.")
+        return
+
     logger.info("Preenchendo planilha...")
     path_planilha_saida = caminho_saida(ARQ_PLANILHA_SAIDA)
     preencher_planilha(dados, PLANILHA, path_planilha_saida)
@@ -327,4 +362,5 @@ async def executar_pipeline():
     logger.info("Arquivos em '%s/':", PASTA_SAIDA)
     logger.info("  - %s", ARQ_PLANILHA_SAIDA)
     logger.info("  - %s", ARQ_DADOS_JSON)
+    logger.info("  - %s", ARQ_VALIDACAO_JSON)
     logger.info("Abra no Excel e pressione Ctrl+Shift+F9")

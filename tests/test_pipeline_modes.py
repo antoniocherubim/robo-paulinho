@@ -1,11 +1,76 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
+from nbr12721.config import VALIDACAO_BLOQUEANTE
 from nbr12721.pipeline import (
     _preencher_cub_automatico,
+    _registrar_validacao_dados,
     _somente_json,
     _usar_extracao_deterministica,
 )
+
+
+def _dados_minimos_validos() -> dict:
+    return {
+        "incorporador": {
+            "nome": "MARCELO PAGOTTO",
+            "cnpj": "10.910.748/0001-85",
+            "endereco": "",
+        },
+        "responsavel": {
+            "nome": "IVAN I. GONÇALVES DA SILVA",
+            "crea": "",
+            "art": "",
+            "endereco": "",
+        },
+        "projeto": {
+            "nomeEdificio": "RESIDENCIAL ALPHA",
+            "localConstrucao": "RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO",
+            "cidadeUf": "Londrina-PR",
+            "projetoPadrao": {
+                "R": True,
+                "CS": False,
+                "CL": False,
+                "CG": False,
+                "CP": False,
+                "CP1Q": False,
+            },
+            "qtdUnidades": 320,
+            "numPavimentos": 22,
+            "vagasUA": 0,
+            "vagasAcessorio": 21,
+            "vagasComum": 55,
+            "areaTerreno": 8958.97,
+            "dataAprovacao": "",
+            "numAlvara": "2457/2023",
+        },
+        "quadro1": {
+            "pavimentos": [
+                {
+                    "nome": "Pavimentos tipo",
+                    "areaPrivCobPadrao": 20242.0,
+                    "qtdPavimentos": 20,
+                }
+            ],
+        },
+        "quadro2": {
+            "unidades": [
+                {
+                    "designacao": "Apartamento tipo 66,02 m²",
+                    "areaPrivCobPadrao": 66.02,
+                    "qtdUnidades": 160,
+                }
+            ],
+        },
+        "quadro3": {"valorCub": 2500.55},
+        "quadro5": {
+            "tipoEdificacao": "EDIFICACAO RESIDENCIAL",
+            "garagens": "55 vagas comuns",
+        },
+    }
 
 
 class TestPipelineModes(unittest.TestCase):
@@ -57,6 +122,41 @@ class TestPipelineModes(unittest.TestCase):
         }
         _preencher_cub_automatico(dados, cub_info)
         self.assertEqual(dados["quadro3"]["valorCub"], 999)
+
+    def test_registrar_validacao_dados_salva_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("nbr12721.pipeline.PASTA_SAIDA", tmpdir),
+                patch(
+                    "nbr12721.pipeline.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+            ):
+                resultado = _registrar_validacao_dados({})
+
+            self.assertFalse(resultado["ok"])
+            path_json = os.path.join(tmpdir, "validacao_dados.json")
+            self.assertTrue(os.path.exists(path_json))
+            with open(path_json, encoding="utf-8") as f:
+                salvo = json.load(f)
+            self.assertEqual(salvo["score"], resultado["score"])
+            self.assertIn("incorporador.cnpj", salvo["criticos_faltantes"])
+
+    def test_registrar_validacao_dados_retorna_ok(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("nbr12721.pipeline.PASTA_SAIDA", tmpdir),
+                patch(
+                    "nbr12721.pipeline.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+            ):
+                resultado = _registrar_validacao_dados(_dados_minimos_validos())
+
+            self.assertTrue(resultado["ok"])
+
+    def test_config_validacao_bloqueante_default_bool(self):
+        self.assertIsInstance(VALIDACAO_BLOQUEANTE, bool)
 
 
 if __name__ == "__main__":

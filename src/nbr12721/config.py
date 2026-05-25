@@ -87,6 +87,10 @@ ARQ_TEXTO_FILTRADO = "textos_filtrados.txt"
 ARQ_RESUMOS_LOTES = "resumos_lotes.txt"
 ARQ_RESPOSTA_BRUTA = "resposta_bruta.txt"
 ARQ_DADOS_JSON = "dados_extraidos.json"
+ARQ_VALIDACAO_JSON = "validacao_dados.json"
+
+# --- Validacao de completude do JSON ---
+VALIDACAO_BLOQUEANTE = _resolver_bool_env("VALIDACAO_BLOQUEANTE", False)
 
 # --- Limites de texto (pipeline LLM) ---
 LIMITE_CHARS_LOTE = 18000
