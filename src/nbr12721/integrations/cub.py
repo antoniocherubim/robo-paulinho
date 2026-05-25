@@ -1,4 +1,8 @@
-"""Integracao CUB Sinduscon Norte PR para o pipeline NBR 12721."""
+"""Integracao CUB Sinduscon Norte PR para o pipeline NBR 12721.
+
+Nota: sindicato/URL apontam para o Sinduscon Norte PR (fonte regional configurada).
+Parametrizacao multi-regiao fica para evolucao futura do produto.
+"""
 import io
 import logging
 import re

@@ -8,13 +8,13 @@ from nbr12721.extraction.deterministic_extraction.extractor import (
 )
 
 TEXTO_SINTETICO = """
-CNPJ10.910.7480001-85
-LONDRINA-PR
+CNPJ12.345.6780001-90
+CURITIBA-PR
 24/07/2023
 Nº de ALVARÁ: 2457/2023
 TERRENO: 8.958,97 M2
 EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]
-CREAPR-27711D
+CREASP-54321D
 """
 
 
@@ -22,8 +22,8 @@ class TestDeterministicExtractor(unittest.TestCase):
     def test_extrai_campos_minimos_texto_sintetico(self):
         dados = extrair_dados_deterministico(TEXTO_SINTETICO)
 
-        self.assertEqual(dados["incorporador"]["cnpj"], "10.910.748/0001-85")
-        self.assertEqual(dados["projeto"]["cidadeUf"], "Londrina-PR")
+        self.assertEqual(dados["incorporador"]["cnpj"], "12.345.678/0001-90")
+        self.assertEqual(dados["projeto"]["cidadeUf"], "Curitiba-PR")
         self.assertEqual(dados["projeto"]["dataAprovacao"], "24/07/2023")
         self.assertEqual(dados["projeto"]["numAlvara"], "2457/2023")
         self.assertAlmostEqual(dados["projeto"]["areaTerreno"], 8958.97)
@@ -32,7 +32,7 @@ class TestDeterministicExtractor(unittest.TestCase):
             dados["quadro3"]["projetoPadrao"]["designacao"],
             "EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]",
         )
-        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+        self.assertEqual(dados["responsavel"]["crea"], "SP-54321/D")
         self.assertIn("projeto.qtdUnidades", dados["_dados_faltantes"])
         self.assertIn("projeto.numPavimentos", dados["_dados_faltantes"])
 
@@ -43,10 +43,10 @@ class TestDeterministicExtractor(unittest.TestCase):
         )
 
     def test_normaliza_crea_ocr(self):
-        self.assertEqual(_normalizar_crea("CREAPR-27711D"), "PR-27711/D")
+        self.assertEqual(_normalizar_crea("CREASP-54321D"), "SP-54321/D")
 
     def test_normaliza_crea_com_espacos(self):
-        self.assertEqual(_normalizar_crea("CREA PR-27711/D"), "PR-27711/D")
+        self.assertEqual(_normalizar_crea("CREA SP-54321/D"), "SP-54321/D")
 
     def test_import_sem_efeitos_colaterais(self):
         import nbr12721.extraction.deterministic_extraction.extractor as mod
@@ -88,15 +88,15 @@ class TestDeterministicExtractor(unittest.TestCase):
         texto = """
 10/01/2020
 APROVAÇÃO DO PROJETO EM 24/07/2023
-LONDRINA-PR
+CURITIBA-PR
 """
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["projeto"]["dataAprovacao"], "24/07/2023")
 
     def test_cidade_uf_nao_cruza_linha_crea(self):
-        texto = "CREA PR-27711/D\nLONDRINA-PR"
+        texto = "CREA SP-54321/D\nCURITIBA-PR"
         dados = extrair_dados_deterministico(texto)
-        self.assertEqual(dados["projeto"]["cidadeUf"], "Londrina-PR")
+        self.assertEqual(dados["projeto"]["cidadeUf"], "Curitiba-PR")
 
     def test_prioriza_data_proxima_alvara_em_linhas_vizinhas(self):
         texto = """
@@ -218,38 +218,40 @@ TOTAL DE VAGAS DUPLAS: 21 VAGAS
 
     def test_extrai_local_construcao(self):
         texto = """
-LOCAL DA OBRA: RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO
-LONDRINA-PR
+LOCAL DA OBRA: FAZENDA BOA VISTA, BAIRRO CENTRO
+CURITIBA-PR
 """
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(
             dados["projeto"]["localConstrucao"],
-            "RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO",
+            "FAZENDA BOA VISTA, BAIRRO CENTRO",
         )
 
     def test_extrai_responsavel_nome_crea(self):
-        texto = "IVAN I. GONÇALVES DA SILVA - ENGENHEIRA CIVIL - CREA PR-27711/D"
+        texto = (
+            "MARIA DE SOUZA PEREIRA - ENGENHEIRA CIVIL - CREA SP-12345/D"
+        )
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(
             dados["responsavel"]["nome"],
-            "IVAN I. GONÇALVES DA SILVA",
+            "MARIA DE SOUZA PEREIRA",
         )
-        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+        self.assertEqual(dados["responsavel"]["crea"], "SP-12345/D")
 
     def test_nao_inventa_nome_responsavel_sem_nome(self):
-        texto = "ENGENHEIRA CIVIL - CREA PR-27711/D"
+        texto = "ENGENHEIRA CIVIL - CREA SP-54321/D"
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["responsavel"]["nome"], "")
-        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+        self.assertEqual(dados["responsavel"]["crea"], "SP-54321/D")
 
     def test_nao_usa_linha_administrativa_com_crea_como_responsavel(self):
         texto = (
-            "Processo Aprovação nº 19.021.125875/2023-06 "
-            "PAGOTTO _ MARCELO PAGOTTO CREA PR-27711/D"
+            "Processo Aprovação nº 99.001/2024-01 "
+            "JOÃO TESTE CREA SP-54321/D"
         )
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["responsavel"]["nome"], "")
-        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+        self.assertEqual(dados["responsavel"]["crea"], "SP-54321/D")
 
     def test_extrai_responsavel_endereco(self):
         texto = (
@@ -264,34 +266,81 @@ LONDRINA-PR
 
     def test_extrai_incorporador_nome_por_rotulo(self):
         texto = """
-INCORPORADOR: MARCELO PAGOTTO
-CNPJ10.910.7480001-85
+PROPRIETÁRIO: ACME INCORPORAÇÃO LTDA
+CNPJ 12.345.678/0001-90
 """
         dados = extrair_dados_deterministico(texto)
-        self.assertEqual(dados["incorporador"]["nome"], "MARCELO PAGOTTO")
+        self.assertEqual(dados["incorporador"]["nome"], "ACME INCORPORAÇÃO LTDA")
 
-    def test_extrai_incorporador_nome_pagotto(self):
-        texto = (
-            "Processo Aprovação nº 19.021.125875/2023-06 PAGOTTO _ MARCELO PAGOTTO"
+    def test_extrai_incorporador_perto_cnpj(self):
+        texto = """
+ALFA SPE LTDA
+CNPJ 98.765.432/0001-11
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["nome"], "ALFA SPE LTDA")
+
+    def test_incorporador_perto_cnpj_nao_usa_linha_so_com_data(self):
+        texto = """
+24/07/2023
+BETA CONSTRUTORA LTDA
+CNPJ 12.345.678/0001-90
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["nome"], "BETA CONSTRUTORA LTDA")
+
+    def test_limpa_prefixo_numerico_nome_empresa(self):
+        from nbr12721.extraction.deterministic_extraction.identity import (
+            _limpar_nome_incorporador,
         )
+
+        self.assertEqual(
+            _limpar_nome_incorporador("7 ACME INCORPORAÇÃO LTDA"),
+            "ACME INCORPORAÇÃO LTDA",
+        )
+
+    def test_limpa_prefixo_numerico_responsavel(self):
+        texto = """
+4 MARIA DE SOUZA PEREIRA
+ENGENHEIRA CIVIL - CREA SP-12345/D
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["responsavel"]["nome"],
+            "MARIA DE SOUZA PEREIRA",
+        )
+
+    def test_incorporador_rejeita_linha_com_dados_admin(self):
+        texto = """
+Dados do empreendimento
+ACME INCORPORAÇÃO LTDA
+"""
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["incorporador"]["nome"], "")
 
-    def test_cidade_uf_ignora_nome_arquivo_arq_pl(self):
-        texto = """
-[AY0410-ARQ-PL-0006.pdf] DOCUMENTO: AY0410-ARQ-PL-0006
-LONDRINA-PR
-"""
+    def test_processo_aprovacao_nao_preenche_incorporador(self):
+        texto = "Processo Aprovação nº 99.001/2024 FULANO DA SILVA"
         dados = extrair_dados_deterministico(texto)
-        self.assertEqual(dados["projeto"]["cidadeUf"], "Londrina-PR")
+        self.assertEqual(dados["incorporador"]["nome"], "")
+
+    def test_cidade_uf_multiplas_cidades(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_cidade_uf,
+        )
+
+        self.assertEqual(_extrair_cidade_uf("CURITIBA-PR"), "Curitiba-PR")
+        self.assertEqual(_extrair_cidade_uf("SÃO PAULO-SP"), "São Paulo-SP")
+        self.assertEqual(
+            _extrair_cidade_uf("BELO HORIZONTE-MG"), "Belo Horizonte-MG"
+        )
 
     def test_cidade_uf_com_prefixo_evidencia_na_mesma_linha(self):
         from nbr12721.extraction.deterministic_extraction.base_fields import (
             _extrair_cidade_uf,
         )
 
-        texto = "[AY0410-ARQ-PL-0006.pdf] LONDRINA-PR"
-        self.assertEqual(_extrair_cidade_uf(texto), "Londrina-PR")
+        texto = "[projeto-xyz.pdf] CURITIBA-PR"
+        self.assertEqual(_extrair_cidade_uf(texto), "Curitiba-PR")
 
     def test_alvara_prefere_formato_com_barra(self):
         from nbr12721.extraction.deterministic_extraction.base_fields import (
@@ -323,46 +372,39 @@ LOCAL DA OBRA DATA DO PROJETO TAXA DE OCUPAÇÃO
     def test_local_consolida_lote_e_situado(self):
         texto = """
 LOCAL DA OBRA DATA DO PROJETO TAXA DE OCUPAÇÃO
-LOTE 101/A, DA SUBDIVISÃO DO LOTE 101 REMANESCENTE
-SITUADO NO RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO, 61,77%
-LONDRINA-PR
+LOTE 22, QUADRA 5
+SITUADO NO BAIRRO CENTRO, 61,77%
+CURITIBA-PR
 """
         dados = extrair_dados_deterministico(texto)
         local = dados["projeto"]["localConstrucao"]
-        self.assertIn("LOTE 101/A", local)
-        self.assertIn("RIBEIRÃO DA ESPERANÇA", local)
+        self.assertIn("LOTE 22", local)
+        self.assertIn("BAIRRO CENTRO", local)
         self.assertNotIn("61,77%", local)
-        self.assertNotIn("Londrina", local)
+        self.assertNotIn("Curitiba", local)
+
+    def test_local_fazenda_generica(self):
+        texto = "FAZENDA BOA VISTA, ESTRADA RURAL KM 12"
+        dados = extrair_dados_deterministico(texto)
+        self.assertIn("FAZENDA BOA VISTA", dados["projeto"]["localConstrucao"])
 
     def test_responsavel_nome_ocr_lixo_busca_linha_legivel(self):
         texto = """
 ZON * ZON vo
-IVANI GONÇALVES DA SILVA MARIANO
-DA SILVA GONCALVES DA SILVA
-ENGENHEIRA CIVIL - CREA PR-27711/D
+MARIA DE SOUZA PEREIRA
+DA SILVA TESTE TESTE
+ENGENHEIRA CIVIL - CREA SP-12345/D
 """
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(
             dados["responsavel"]["nome"],
-            "IVANI GONÇALVES DA SILVA MARIANO",
+            "MARIA DE SOUZA PEREIRA",
         )
 
     def test_responsavel_nao_aceita_zon_lixo(self):
-        texto = "ZON * ZON vo ENGENHEIRA CIVIL - CREA PR-27711/D"
+        texto = "ZON * ZON vo ENGENHEIRA CIVIL - CREA SP-54321/D"
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["responsavel"]["nome"], "")
-
-    def test_incorporador_yticon_proprietario(self):
-        texto = """
-PROPRIETÁRIO:
-YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA.
-CNPJ 10.910.748/0001-85
-"""
-        dados = extrair_dados_deterministico(texto)
-        self.assertEqual(
-            dados["incorporador"]["nome"],
-            "YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA.",
-        )
 
     def test_extrai_nome_edificio_por_rotulo(self):
         texto = "NOME DO EDIFÍCIO: RESIDENCIAL ALPHA"
@@ -371,15 +413,15 @@ CNPJ 10.910.748/0001-85
 
     def test_quadro5_outras_indicacoes(self):
         texto = """
-Processo Aprovação nº 19.021.125875/2023-06
+Processo Aprovação nº 99.001/2024-06
 Nº de ALVARÁ: 2457/2023
-LOCAL DA OBRA: RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO
+LOCAL DA OBRA: FAZENDA BOA VISTA, BAIRRO CENTRO
 """
         dados = extrair_dados_deterministico(texto)
         outras = dados["quadro5"]["outrasIndicacoes"]
-        self.assertIn("19.021.125875/2023-06", outras)
+        self.assertIn("99.001/2024-06", outras)
         self.assertIn("2457/2023", outras)
-        self.assertIn("RIBEIRÃO DA ESPERANÇA", outras)
+        self.assertIn("FAZENDA BOA VISTA", outras)
 
     def test_quadro1_extrai_pavimento_tipo_por_unidades(self):
         texto = """

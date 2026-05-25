@@ -20,6 +20,11 @@ RE_LINHA_CIDADE_UF_REJEITADA = re.compile(
     r"^DOCUMENTO:\s*[^\s]+\.pdf\s*$|^(?:ARQ-PL|PLA-)[^\s]*\s*$",
     re.IGNORECASE,
 )
+_UFS_REGEX = "|".join(sorted(UFS_BRASIL))
+RE_CIDADE_UF_EVIDENCIA = re.compile(
+    rf"\b[A-ZÀ-Ü][A-ZÀ-Ü ]{{2,}}\s*[-/]\s*({_UFS_REGEX})\b",
+    re.IGNORECASE,
+)
 RE_CIDADE_UF_LINHA = re.compile(
     r"(?<![A-Za-zÀ-ÿ])([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ \t]{2,40}?)[ \t]*[-/][ \t]*([A-Z]{2})\b",
     re.IGNORECASE,
@@ -55,7 +60,8 @@ RE_LOCAL_CABECALHO = re.compile(
 )
 RE_LOTE = re.compile(r"\bLOTE\b", re.IGNORECASE)
 RE_LOCAL_KEYWORDS = re.compile(
-    r"RIBEIR[AÃ]O|FAZENDA|PALHANO|LOTE|SITUAD",
+    r"\b(?:LOTE|QUADRA|RUA|AVENIDA|AV\.|ESTRADA|RODOVIA|FAZENDA|GLEBA|"
+    r"CH[AÁ]CARA|S[IÍ]TIO|CONDOM[IÍ]NIO|BAIRRO|SITUAD|LOCALIZAD|MATR[IÍ]CULA)\b",
     re.IGNORECASE,
 )
 RE_SITUADO_NO = re.compile(
@@ -63,18 +69,35 @@ RE_SITUADO_NO = re.compile(
     re.IGNORECASE,
 )
 RE_TAXA_PERCENTUAL_FINAL = re.compile(r",\s*[\d.,]+\s*%\s*$")
-RE_PROPRIETARIO = re.compile(r"PROPRIET[AÁ]RIO", re.IGNORECASE)
-RE_YTICON = re.compile(
-    r"YTICON\s+CONSTRU[CÇ][AÃ]O\s+E\s+INCORPORA[CÇ][AÃ]O",
+RE_BLOCO_ADMINISTRATIVO = re.compile(
+    r"\b(?:Processo|Aprova[cç][aã]o|Alvar[aá]|Diretoria|Matr[ií]cula|"
+    r"Assinado|Digitalmente|Digital|Dados)\b",
     re.IGNORECASE,
 )
-RE_PAGOTTO_ADMIN = re.compile(
-    r"Processo|Aprova[cç][aã]o|Alvar[aá]|Diretoria|Matr[ií]cula",
+RE_LINHA_CNPJ = re.compile(
+    r"\bCNPJ\b|"
+    r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b|"
+    r"\b\d{2}\.\d{3}\.\d{3}\d{4}-\d{2}\b",
+    re.IGNORECASE,
+)
+
+
+def linha_contem_cnpj(linha: str) -> bool:
+    """True apenas quando a linha menciona CNPJ formatado (nao CPF nem data)."""
+    return bool(RE_LINHA_CNPJ.search(linha))
+RE_EMPRESA_JURIDICA = re.compile(
+    r"\b(?:LTDA|S/?A\.?|SA|EIRELI|SPE|INCORPORA[CÇ][AÃ]O|CONSTRU[CÇ][AÃ]O|"
+    r"EMPREENDIMENTOS)\b",
+    re.IGNORECASE,
+)
+RE_MENCAO_ROTULO_INCORPORADOR = re.compile(
+    r"\b(?:INCORPORADOR|INCORPORADORA|CONSTRUTORA|"
+    r"PROPRIET[AÁ]RIO(?:\s+DO\s+TERRENO)?|PROPRIETARIA)\b",
     re.IGNORECASE,
 )
 RE_NOME_RESP_INVALIDO = re.compile(
-    r"\b(?:Processo|PAGOTTO|CNPJ|ALVAR[AÁ]|N[°ºo.]|RESPONS[AÁ]VEL|ASSINADO|"
-    r"DIGITAL|DADOS|DIRETORIA)\b",
+    r"\b(?:Processo|Aprova[cç][aã]o|Alvar[aá]|CNPJ|CPF|Diretoria|Assinado|"
+    r"Digital|Dados|Matr[ií]cula|Propriet[aá]rio|RESPONS[AÁ]VEL|N[°ºo.])\b",
     re.IGNORECASE,
 )
 RE_CPF_CNPJ_DATA_NOME = re.compile(
@@ -150,10 +173,10 @@ RE_PROCESSO_APROVACAO = re.compile(
     re.IGNORECASE,
 )
 RE_INCORPORADOR_ROTULO = re.compile(
-    r"(?:INCORPORADOR|INCORPORADORA|CONSTRUTORA|PROPRIET[AÁ]RIO)\s*:?\s*(.+)",
+    r"^\s*(?:INCORPORADOR|INCORPORADORA|CONSTRUTORA|"
+    r"PROPRIET[AÁ]RIO(?:\s+DO\s+TERRENO)?|PROPRIETARIA)\s*:?\s*(.+)",
     re.IGNORECASE,
 )
-RE_PAGOTTO = re.compile(r"PAGOTTO\s*[_\-]\s*(.+)", re.IGNORECASE)
 RE_CORTE_MARCADOR_ADMIN = re.compile(
     r"\b(?:Processo|N[°ºo.]|ALVAR[AÁ]|CREA|CAU|CNPJ)\b",
     re.IGNORECASE,

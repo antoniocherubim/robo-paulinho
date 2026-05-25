@@ -5,6 +5,12 @@ from __future__ import annotations
 import re
 
 from .base_fields import _texto_menciona_crea
+from .patterns import (
+    RE_BLOCO_ADMINISTRATIVO,
+    RE_EMPRESA_JURIDICA,
+    RE_MENCAO_ROTULO_INCORPORADOR,
+    linha_contem_cnpj,
+)
 from .floors import (
     _quadro1_apenas_template,
     _texto_menciona_pavimentos_ou_areas,
@@ -18,13 +24,19 @@ from .units import (
 
 
 def _texto_menciona_incorporador(texto: str) -> bool:
-    return bool(
-        re.search(
-            r"INCORPORADOR|INCORPORADORA|CONSTRUTORA|PROPRIET[AÁ]RIO|PAGOTTO",
-            texto,
-            re.IGNORECASE,
-        )
-    )
+    if RE_MENCAO_ROTULO_INCORPORADOR.search(texto):
+        return True
+    linhas = texto.splitlines()
+    for i, linha in enumerate(linhas):
+        if not linha_contem_cnpj(linha):
+            continue
+        for j in range(max(0, i - 2), min(len(linhas), i + 3)):
+            candidata = linhas[j]
+            if RE_BLOCO_ADMINISTRATIVO.search(candidata):
+                continue
+            if RE_EMPRESA_JURIDICA.search(candidata):
+                return True
+    return False
 
 
 def _texto_menciona_local_obra(texto: str) -> bool:

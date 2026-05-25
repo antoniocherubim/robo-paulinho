@@ -22,20 +22,20 @@ from nbr12721.orchestration.pipeline_postprocess import (
 def _dados_minimos_validos() -> dict:
     return {
         "incorporador": {
-            "nome": "MARCELO PAGOTTO",
-            "cnpj": "10.910.748/0001-85",
+            "nome": "ACME INCORPORAÇÃO LTDA",
+            "cnpj": "12.345.678/0001-90",
             "endereco": "",
         },
         "responsavel": {
-            "nome": "IVAN I. GONÇALVES DA SILVA",
+            "nome": "MARIA DE SOUZA PEREIRA",
             "crea": "",
             "art": "",
             "endereco": "",
         },
         "projeto": {
             "nomeEdificio": "RESIDENCIAL ALPHA",
-            "localConstrucao": "RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO",
-            "cidadeUf": "Londrina-PR",
+            "localConstrucao": "LOTE 22, BAIRRO CENTRO",
+            "cidadeUf": "Curitiba-PR",
             "projetoPadrao": {
                 "R": True,
                 "CS": False,

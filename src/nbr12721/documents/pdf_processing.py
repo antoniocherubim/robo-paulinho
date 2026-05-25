@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 
+from ..extraction.deterministic_extraction.patterns import RE_CIDADE_UF_EVIDENCIA
 from ..settings.config import (
     LIMITE_CHARS_LOTE,
     LIMITE_CHARS_TEXTO_FILTRADO,
@@ -527,8 +528,7 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
         r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b|"
         r"\bCNPJ\b|\bCREA\b|\bCAU\b|\bART\b|\bRRT\b|"
         r"\balvar[aá]\b|\bprocesso\b|\baprova[cç][aã]o\b|"
-        r"\b[A-ZÀ-Ü][A-ZÀ-Ü ]{2,}-\s*[A-Z]{2}\b|"
-        r"\bLONDRINA\s*-\s*PR\b|"
+        rf"{RE_CIDADE_UF_EVIDENCIA.pattern}|"
         r"\b\d+\s*APTOS?\b|\bAPTO\s*\d+\b|\bUNIDADES?\b|"
         r"\bTOTAL\s+DE\s+VAGAS\b|\bVAGAS?\b|\bPNE\b|"
         r"\bTERRENO\b|\bLOCAL\s+DA\s+OBRA\b|\bDATA\s+DO\s+PROJETO\b|"
@@ -552,7 +552,7 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
             (r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b|\bCNPJ\b", 90),
             (r"\bCREA\b|\bCAU\b|\bART\b|\bRRT\b|RESPONS[AÁ]VEL T[EÉ]CNICO", 80),
             (r"\bALVAR[AÁ]\b|\bPROCESSO\s+APROVA", 85),
-            (r"\bLOCAL\s+DA\s+OBRA\b|\bSITUADO\b|\bLONDRINA\s*-\s*PR\b", 85),
+            (rf"\bLOCAL\s+DA\s+OBRA\b|\bSITUADO\b|{RE_CIDADE_UF_EVIDENCIA.pattern}", 85),
             (r"\bTERRENO\s*:\s*[\d.,]+\s*M", 80),
             (r"\bRESIDENCIAL\b.*\bMULTIFAMILIAR\b|\bVERTICAL\b|\bRMV\b", 70),
             (r"\bPAV\.?\s*TIPO\b.*\bTORRE\b|\bTIPOS?\b.*\bTORRE\b", 75),

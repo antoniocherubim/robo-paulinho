@@ -6,10 +6,14 @@ import re
 
 from .base_fields import _pontuacao_numero_admin, _texto_menciona_crea
 from .patterns import (
+    RE_BLOCO_ADMINISTRATIVO,
     RE_CEP,
     RE_CORTE_MARCADOR_ADMIN,
+    RE_CPF_CNPJ_DATA_NOME,
+    linha_contem_cnpj,
     RE_EDIFICIO_LINHA,
     RE_EMAIL,
+    RE_EMPRESA_JURIDICA,
     RE_ENDERECO_OBRA,
     RE_INCORPORADOR_ROTULO,
     RE_LOCAL_CABECALHO,
@@ -17,20 +21,16 @@ from .patterns import (
     RE_LOCAL_OBRA,
     RE_LOGRADOURO,
     RE_LOTE,
+    RE_MENCAO_ROTULO_INCORPORADOR,
     RE_NOME_EDIFICIO_ROTULO,
     RE_NOME_RESP_INVALIDO,
-    RE_PAGOTTO,
-    RE_PAGOTTO_ADMIN,
     RE_PROCESSO_APROVACAO,
     RE_PROFISSAO_NOME,
     RE_PROFISSAO_SPLIT,
-    RE_PROPRIETARIO,
     RE_SITUADO,
     RE_SITUADO_NO,
     RE_TAXA_PERCENTUAL_FINAL,
     RE_TEL,
-    RE_YTICON,
-    RE_CPF_CNPJ_DATA_NOME,
 )
 from .utils import _limpar_texto_campo, _normalizar_linha_ocr
 
@@ -101,8 +101,18 @@ def _consolidar_lote_situado(linhas: list[str], inicio: int) -> str:
     return ""
 
 
+def _limpar_prefixo_ocr_nome(valor: str) -> str:
+    """Remove lixo OCR numerico/simbolico no inicio (ex.: '7 ACME' -> 'ACME')."""
+    nome = _limpar_texto_campo(valor)
+    nome = re.sub(r"^[\s\d|°º.:;\-*_]+", "", nome)
+    while nome and not re.match(r"[A-Za-zÀ-ÿ]", nome):
+        nome = nome[1:].lstrip()
+    return nome.strip()
+
+
 def _limpar_nome_incorporador(valor: str) -> str:
     nome = _cortar_nome_incorporador(valor)
+    nome = _limpar_prefixo_ocr_nome(nome)
     nome = re.sub(r"\s+\d{10,}.*$", "", nome).strip()
     return nome
 
@@ -149,7 +159,21 @@ def _extrair_local_construcao(texto: str) -> str:
             valor = _limpar_local_obra(m.group(1))
             if valor and not _local_candidato_invalido(valor):
                 return valor
-    return ""
+
+    melhor_linha = ""
+    melhor_pontuacao = -1
+    for linha in linhas:
+        linha_n = _normalizar_linha_ocr(linha)
+        if not RE_LOCAL_KEYWORDS.search(linha_n):
+            continue
+        valor = _limpar_local_obra(linha_n)
+        if not valor or _local_candidato_invalido(valor):
+            continue
+        pontuacao = _pontuacao_local_consolidado(valor)
+        if pontuacao > melhor_pontuacao:
+            melhor_pontuacao = pontuacao
+            melhor_linha = valor
+    return melhor_linha
 
 
 def _nome_candidato_invalido(nome: str) -> bool:
@@ -161,7 +185,7 @@ def _nome_antes_profissao(linha: str, *, somente_engenheiro_arquiteto: bool = Fa
     m = padrao.search(linha)
     if not m:
         return ""
-    antes = _limpar_texto_campo(linha[: m.start()].strip(" -–—"))
+    antes = _limpar_prefixo_ocr_nome(linha[: m.start()].strip(" -–—"))
     if not antes:
         return ""
     if _nome_candidato_invalido(antes):
@@ -223,7 +247,7 @@ def _melhor_nome_linhas_anteriores(linhas: list[str], indice_crea: int) -> str:
         pontuacao = _pontuacao_legibilidade_nome(linha)
         if pontuacao[0] < 0:
             continue
-        nome = _limpar_texto_campo(linha)
+        nome = _limpar_prefixo_ocr_nome(linha)
         candidatos.append((pontuacao, nome))
     if not candidatos:
         return ""
@@ -274,42 +298,56 @@ def _cortar_nome_incorporador(valor: str) -> str:
     return _limpar_texto_campo(cortado.strip(" -–—"))
 
 
-def _extrair_incorporador_nome(texto: str) -> str:
-    linhas = texto.splitlines()
+def _nome_incorporador_aceito(linha: str, valor: str) -> bool:
+    if not valor or len(valor) <= 2:
+        return False
+    if valor in (":", "-", "–", "—"):
+        return False
+    if RE_BLOCO_ADMINISTRATIVO.search(linha):
+        return False
+    return bool(RE_EMPRESA_JURIDICA.search(valor) or len(valor.split()) >= 2)
+
+
+def _extrair_incorporador_por_rotulo(linhas: list[str]) -> str:
     for i, linha in enumerate(linhas):
-        if RE_PROPRIETARIO.search(linha):
-            m = RE_INCORPORADOR_ROTULO.search(linha)
-            if m:
-                nome = _limpar_nome_incorporador(m.group(1))
-                if (
-                    nome
-                    and len(nome) > 2
-                    and nome not in (":", "-", "–", "—")
-                    and not RE_PAGOTTO_ADMIN.search(linha)
-                ):
-                    return nome
-            for j in range(i + 1, min(i + 3, len(linhas))):
-                prox = _limpar_texto_campo(linhas[j])
-                if RE_YTICON.search(prox):
-                    return _limpar_nome_incorporador(prox)
-    for linha in linhas:
-        if RE_YTICON.search(linha):
-            return _limpar_nome_incorporador(linha)
-    for linha in linhas:
+        if RE_BLOCO_ADMINISTRATIVO.search(linha):
+            continue
         m = RE_INCORPORADOR_ROTULO.search(linha)
         if m:
             nome = _limpar_nome_incorporador(m.group(1))
-            if nome and not RE_PAGOTTO_ADMIN.search(linha):
+            if _nome_incorporador_aceito(linha, nome):
                 return nome
-    for linha in linhas:
-        if RE_PAGOTTO_ADMIN.search(linha):
+        if not RE_MENCAO_ROTULO_INCORPORADOR.search(linha):
             continue
-        m = RE_PAGOTTO.search(linha)
-        if m:
-            nome = _limpar_nome_incorporador(m.group(1))
-            if nome:
-                return nome
+        for j in range(i + 1, min(i + 3, len(linhas))):
+            prox = _limpar_texto_campo(linhas[j])
+            if _nome_incorporador_aceito(linhas[j], prox):
+                return _limpar_nome_incorporador(prox)
     return ""
+
+
+def _extrair_incorporador_perto_cnpj(linhas: list[str]) -> str:
+    for i, linha in enumerate(linhas):
+        if not linha_contem_cnpj(linha):
+            continue
+        for j in range(max(0, i - 2), min(len(linhas), i + 3)):
+            candidata = linhas[j]
+            if RE_BLOCO_ADMINISTRATIVO.search(candidata):
+                continue
+            prox = _limpar_texto_campo(candidata)
+            if RE_EMPRESA_JURIDICA.search(prox) and _nome_incorporador_aceito(
+                candidata, prox
+            ):
+                return _limpar_nome_incorporador(prox)
+    return ""
+
+
+def _extrair_incorporador_nome(texto: str) -> str:
+    linhas = texto.splitlines()
+    por_rotulo = _extrair_incorporador_por_rotulo(linhas)
+    if por_rotulo:
+        return por_rotulo
+    return _extrair_incorporador_perto_cnpj(linhas)
 
 
 def _extrair_nome_edificio(texto: str, designacao: str = "") -> str:
