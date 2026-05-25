@@ -224,6 +224,20 @@ Status: **a validar com engenheiro civil**. A seleção automática é pragmáti
 o preenchimento mínimo, mas pode precisar ser ajustada conforme enquadramento normativo,
 características do empreendimento ou orientação profissional.
 
+### Saneamento textual pós-OCR
+
+O sistema remove apenas ruídos formais de OCR em campos textuais (identificação, local da
+obra, nomes e endereços de responsável/incorporador), como símbolos isolados, vírgulas finais
+e tokens finais curtos sem significado após separadores.
+
+A limpeza **não corrige** endereço, nomes nem dados técnicos de engenharia; ela não infere
+nem normaliza conteúdo semântico, apenas descarta lixo formal reconhecível do OCR.
+
+Campos técnicos como áreas, pavimentos, vagas, CNPJ, CREA, alvará e datas **não** passam
+por essa regra textual.
+
+Decisão classificada como **operacional/OCR**, não como critério técnico de engenharia civil.
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.

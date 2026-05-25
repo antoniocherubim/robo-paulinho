@@ -32,7 +32,11 @@ from .patterns import (
     RE_TAXA_PERCENTUAL_FINAL,
     RE_TEL,
 )
-from .utils import _limpar_texto_campo, _normalizar_linha_ocr
+from .utils import (
+    _limpar_ruido_ocr_textual,
+    _limpar_texto_campo,
+    _normalizar_linha_ocr,
+)
 
 
 def _eh_apenas_cidade_uf(texto: str) -> bool:
@@ -60,7 +64,7 @@ def _limpar_local_obra(valor: str) -> str:
     limpo = re.sub(r",?\s*[°º]\s*,?", ", ", limpo)
     limpo = re.sub(r",\s*,", ", ", limpo)
     limpo = re.sub(r"\s+", " ", limpo).strip(" ,;")
-    return limpo
+    return _limpar_ruido_ocr_textual(limpo)
 
 
 def _pontuacao_local_consolidado(valor: str) -> int:
@@ -114,7 +118,7 @@ def _limpar_nome_incorporador(valor: str) -> str:
     nome = _cortar_nome_incorporador(valor)
     nome = _limpar_prefixo_ocr_nome(nome)
     nome = re.sub(r"\s+\d{10,}.*$", "", nome).strip()
-    return nome
+    return _limpar_ruido_ocr_textual(nome)
 
 
 def _extrair_local_construcao(texto: str) -> str:
@@ -263,16 +267,16 @@ def _extrair_responsavel_nome(texto: str, crea: str = "") -> str:
                 continue
             nome = _nome_antes_profissao(linha, somente_engenheiro_arquiteto=True)
             if nome and not _nome_parece_lixo(nome):
-                return nome
+                return _limpar_ruido_ocr_textual(nome)
             nome_melhor = _melhor_nome_linhas_anteriores(linhas, i)
             if nome_melhor:
-                return nome_melhor
+                return _limpar_ruido_ocr_textual(nome_melhor)
         return ""
     for linha in texto.splitlines():
         if re.search(r"CAU", linha, re.IGNORECASE):
             nome = _nome_antes_profissao(linha)
             if nome:
-                return nome
+                return _limpar_ruido_ocr_textual(nome)
     return ""
 
 
@@ -286,7 +290,7 @@ def _extrair_responsavel_endereco(texto: str) -> str:
             or RE_TEL.search(linha_n)
             or RE_EMAIL.search(linha_n)
         ):
-            return _limpar_texto_campo(linha_n)
+            return _limpar_ruido_ocr_textual(linha_n)
     return ""
 
 

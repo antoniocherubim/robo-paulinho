@@ -310,6 +310,38 @@ ENGENHEIRA CIVIL - CREA SP-12345/D
             "MARIA DE SOUZA PEREIRA",
         )
 
+    def test_limpa_ruido_final_local_construcao(self):
+        texto = """
+LOCAL DA OBRA DATA DO PROJETO
+LOTE 22, QUADRA 5, err
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["projeto"]["localConstrucao"],
+            "LOTE 22, QUADRA 5",
+        )
+
+    def test_limpeza_textual_preserva_endereco_valido(self):
+        texto = "RUA DAS FLORES, 123, BAIRRO CENTRO 80000-000"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["responsavel"]["endereco"],
+            "RUA DAS FLORES, 123, BAIRRO CENTRO 80000-000",
+        )
+
+    def test_limpeza_textual_preserva_empresa_ltda(self):
+        texto = "PROPRIETÁRIO: ACME INCORPORAÇÃO LTDA."
+        dados = extrair_dados_deterministico(texto)
+        self.assertIn("LTDA", dados["incorporador"]["nome"])
+
+    def test_limpeza_textual_remove_prefixo_simbolico(self):
+        texto = "LOCAL DA OBRA: | * FAZENDA BOA VISTA -"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["projeto"]["localConstrucao"],
+            "FAZENDA BOA VISTA",
+        )
+
     def test_incorporador_rejeita_linha_com_dados_admin(self):
         texto = """
 Dados do empreendimento
@@ -486,6 +518,87 @@ COBERTURA - ÁREA: 250,00 m²
         self.assertEqual(
             [p["nome"] for p in dados["quadro1"]["pavimentos"]],
             ["Pavimento térreo", "Pavimentos tipo", "Cobertura"],
+        )
+
+
+class TestLimparRuidoOcrTextual(unittest.TestCase):
+    """Testes unitarios diretos do helper de saneamento pos-OCR."""
+
+    def test_remove_token_err_apos_virgula(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("LOTE 22, QUADRA 5, err"),
+            "LOTE 22, QUADRA 5",
+        )
+
+    def test_remove_prefixo_e_sufixo_simbolicos(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("| * FAZENDA BOA VISTA -"),
+            "FAZENDA BOA VISTA",
+        )
+
+    def test_preserva_endereco_com_numeros(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        endereco = "RUA DAS FLORES, 123, BAIRRO CENTRO"
+        self.assertEqual(_limpar_ruido_ocr_textual(endereco), endereco)
+
+    def test_preserva_curitiba_pr(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(_limpar_ruido_ocr_textual("CURITIBA-PR"), "CURITIBA-PR")
+
+    def test_preserva_ltda_sa_spe_uf(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("ACME INCORPORAÇÃO LTDA."),
+            "ACME INCORPORAÇÃO LTDA.",
+        )
+        self.assertEqual(_limpar_ruido_ocr_textual("EMPRESA S/A"), "EMPRESA S/A")
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("ALFA SPE LTDA"), "ALFA SPE LTDA"
+        )
+        self.assertEqual(_limpar_ruido_ocr_textual("FILIAL, PR"), "FILIAL, PR")
+
+    def test_loop_remove_varios_segmentos_ruido(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(_limpar_ruido_ocr_textual("LOTE 1, err, e"), "LOTE 1")
+
+    def test_normaliza_virgulas_repetidas_e_final(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("FAZENDA BOA VISTA,, BAIRRO CENTRO,"),
+            "FAZENDA BOA VISTA, BAIRRO CENTRO",
+        )
+
+    def test_remove_err_em_linha_com_rotulo_local(self):
+        from nbr12721.extraction.deterministic_extraction.utils import (
+            _limpar_ruido_ocr_textual,
+        )
+
+        self.assertEqual(
+            _limpar_ruido_ocr_textual("LOCAL DA OBRA: LOTE 22, QUADRA 5, err"),
+            "LOCAL DA OBRA: LOTE 22, QUADRA 5",
         )
 
 
