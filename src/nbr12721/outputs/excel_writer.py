@@ -1,4 +1,8 @@
 """Preenchimento da planilha ABNT NBR 12721:2006 (openpyxl)."""
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["preencher_planilha"]
 
@@ -12,9 +16,19 @@ def preencher_planilha(dados, modelo, saida):
         try: ws[cell] = val
         except AttributeError: pass
 
+    inicio = time.monotonic()
+    logger.info("Abrindo planilha modelo: %s", modelo)
     wb = load_workbook(modelo)
+    logger.info("Abas carregadas: %s", ", ".join(wb.sheetnames))
+
     ws = wb["INFORMAÇÕES PRELIMINARES"]
     inc, resp, proj = dados["incorporador"], dados["responsavel"], dados["projeto"]
+    logger.info(
+        "Preenchendo informacoes preliminares | incorporador=%s | edificio=%s | cidadeUf=%s",
+        inc.get("nome", ""),
+        proj.get("nomeEdificio", ""),
+        proj.get("cidadeUf", ""),
+    )
     S(ws,"F5",inc["nome"]); S(ws,"F6",inc["cnpj"]); S(ws,"F7",inc["endereco"])
     S(ws,"G10",resp["nome"]); S(ws,"G11",resp["crea"]); S(ws,"G12",resp["art"]); S(ws,"G13",resp["endereco"])
     S(ws,"G16",proj["nomeEdificio"]); S(ws,"G17",proj["localConstrucao"]); S(ws,"G18",proj["cidadeUf"])
@@ -30,8 +44,10 @@ def preencher_planilha(dados, modelo, saida):
     S(ws,"H30",proj.get("numAlvara",""))
 
     ws = wb["QUADRO I"]
+    pavimentos = dados.get("quadro1",{}).get("pavimentos",[])
+    logger.info("Preenchendo QUADRO I com %s pavimento(s)", len(pavimentos[:25]))
     S(ws,"D5",f"{proj.get('localConstrucao','')} - {proj.get('cidadeUf','')}")
-    for i,p in enumerate(dados.get("quadro1",{}).get("pavimentos",[])[:25]):
+    for i,p in enumerate(pavimentos[:25]):
         r=16+i
         ws.cell(r,2).value=p.get("nome",""); ws.cell(r,3).value=N(p.get("areaPrivCobPadrao"))
         ws.cell(r,4).value=N(p.get("areaPrivCobDifReal")); ws.cell(r,5).value=N(p.get("areaPrivCobDifEquiv"))
@@ -41,7 +57,9 @@ def preencher_planilha(dados, modelo, saida):
         ws.cell(r,15).value=N(p.get("areaComumPCobDifEquiv")); ws.cell(r,20).value=N(p.get("qtdPavimentos",1))
 
     ws = wb["QUADRO II"]
-    for i,u in enumerate(dados.get("quadro2",{}).get("unidades",[])[:25]):
+    unidades = dados.get("quadro2",{}).get("unidades",[])
+    logger.info("Preenchendo QUADRO II com %s unidade(s)", len(unidades[:25]))
+    for i,u in enumerate(unidades[:25]):
         r=17+i
         ws.cell(r,2).value=u.get("designacao",""); ws.cell(r,3).value=N(u.get("areaPrivCobPadrao"))
         ws.cell(r,4).value=N(u.get("areaPrivCobDifReal")); ws.cell(r,5).value=N(u.get("areaPrivCobDifEquiv"))
@@ -50,6 +68,12 @@ def preencher_planilha(dados, modelo, saida):
 
     ws = wb["QUADRO III"]
     q3 = dados.get("quadro3",{}); pp3 = q3.get("projetoPadrao",{})
+    logger.info(
+        "Preenchendo QUADRO III | sindicato=%s | mesCub=%s | valorCub=%s",
+        q3.get("sindicato", ""),
+        q3.get("mesCub", ""),
+        q3.get("valorCub", 0),
+    )
     S(ws,"C18",pp3.get("designacao","")); S(ws,"D18",pp3.get("padrao","")); S(ws,"E18",pp3.get("numPav",""))
     S(ws,"F18",pp3.get("areaEquiv","")); S(ws,"G18",pp3.get("quartos","")); S(ws,"H18",pp3.get("salas",""))
     S(ws,"I18",pp3.get("banheiros","")); S(ws,"K18",pp3.get("quartosEmp",""))
@@ -77,6 +101,7 @@ def preencher_planilha(dados, modelo, saida):
 
     ws = wb["QUADRO V"]
     q5 = dados.get("quadro5",{})
+    logger.info("Preenchendo QUADRO V | tipo=%s | garagens=%s", q5.get("tipoEdificacao", ""), q5.get("garagens", ""))
     for row,key in [(11,"tipoEdificacao"),(13,"numPavimentos"),(15,"unidadesPorPav"),(17,"numeracao"),
         (19,"pilotis"),(20,"transicao"),(21,"garagens"),(22,"pavComunitarios"),(23,"outrosPav"),
         (26,"dataAprovacao"),(28,"outrasIndicacoes")]:
@@ -84,15 +109,23 @@ def preencher_planilha(dados, modelo, saida):
         if v: ws.cell(row,6).value=v
 
     ws = wb["QUADRO VI"]
-    for i,eq in enumerate(dados.get("quadro6",{}).get("equipamentos",[])[:30]):
+    equipamentos = dados.get("quadro6",{}).get("equipamentos",[])
+    logger.info("Preenchendo QUADRO VI com %s equipamento(s)", len(equipamentos[:30]))
+    for i,eq in enumerate(equipamentos[:30]):
         r=12+i; ws.cell(r,2).value=eq.get("nome",""); ws.cell(r,4).value=eq.get("tipo","")
         ws.cell(r,6).value=eq.get("acabamento",""); ws.cell(r,8).value=eq.get("detalhes","")
     ws = wb["QUADRO VII"]
-    for i,ac in enumerate(dados.get("quadro7",{}).get("acabamentos",[])[:30]):
+    acabamentos_priv = dados.get("quadro7",{}).get("acabamentos",[])
+    logger.info("Preenchendo QUADRO VII com %s acabamento(s)", len(acabamentos_priv[:30]))
+    for i,ac in enumerate(acabamentos_priv[:30]):
         r=12+i; ws.cell(r,2).value=ac.get("dependencia",""); ws.cell(r,4).value=ac.get("pisos","")
         ws.cell(r,7).value=ac.get("paredes",""); ws.cell(r,10).value=ac.get("tetos",""); ws.cell(r,12).value=ac.get("outros","")
     ws = wb["QUADRO VIII"]
-    for i,ac in enumerate(dados.get("quadro8",{}).get("acabamentos",[])[:30]):
+    acabamentos_comuns = dados.get("quadro8",{}).get("acabamentos",[])
+    logger.info("Preenchendo QUADRO VIII com %s acabamento(s)", len(acabamentos_comuns[:30]))
+    for i,ac in enumerate(acabamentos_comuns[:30]):
         r=12+i; ws.cell(r,2).value=ac.get("dependencia",""); ws.cell(r,4).value=ac.get("pisos","")
         ws.cell(r,7).value=ac.get("paredes",""); ws.cell(r,10).value=ac.get("tetos",""); ws.cell(r,12).value=ac.get("outros","")
+    logger.info("Salvando planilha preenchida: %s", saida)
     wb.save(saida)
+    logger.info("Planilha salva com sucesso em %.2fs", time.monotonic() - inicio)

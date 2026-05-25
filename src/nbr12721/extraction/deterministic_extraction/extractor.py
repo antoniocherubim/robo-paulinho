@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from .base_fields import (
     _detectar_padrao_r,
     _extrair_area_terreno,
@@ -32,6 +35,8 @@ from .units import (
     _extrair_vagas_comuns,
     _extrair_vagas_duplas,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["extrair_dados_deterministico"]
 
@@ -71,12 +76,47 @@ def _preencher_identificacao(dados: dict, texto: str, designacao: str) -> None:
 
 def extrair_dados_deterministico(texto: str) -> dict:
     """Extrai campos do texto e retorna dict no schema de dados_extraidos.json."""
+    inicio = time.monotonic()
+    logger.info("Extrator deterministico iniciado | texto=%s chars", len(texto or ""))
     dados = _esqueleto_vazio()
 
     designacao = _preencher_campos_base(dados, texto)
+    logger.info(
+        "Campos base: cnpj=%s | cidadeUf=%s | alvara=%s | areaTerreno=%s | residencial=%s",
+        bool(dados["incorporador"]["cnpj"]),
+        dados["projeto"]["cidadeUf"] or "-",
+        dados["projeto"]["numAlvara"] or "-",
+        dados["projeto"]["areaTerreno"],
+        dados["projeto"]["projetoPadrao"]["R"],
+    )
+
     _preencher_unidades_pavimentos_vagas(dados, texto)
+    logger.info(
+        "Unidades/pavimentos/vagas: qtdUnidades=%s | numPavimentos=%s | quadro1=%s | quadro2=%s | vagasComum=%s | vagasDuplas=%s",
+        dados["projeto"]["qtdUnidades"],
+        dados["projeto"]["numPavimentos"],
+        len(dados["quadro1"]["pavimentos"]),
+        len(dados["quadro2"]["unidades"]),
+        dados["projeto"]["vagasComum"],
+        dados["projeto"]["vagasAcessorio"],
+    )
+
     _preencher_identificacao(dados, texto, designacao)
+    logger.info(
+        "Identificacao: incorporador=%s | responsavel=%s | crea=%s | local=%s | edificio=%s",
+        dados["incorporador"]["nome"] or "-",
+        dados["responsavel"]["nome"] or "-",
+        dados["responsavel"]["crea"] or "-",
+        dados["projeto"]["localConstrucao"] or "-",
+        dados["projeto"]["nomeEdificio"] or "-",
+    )
+
     _preencher_quadro5(dados, texto)
     dados["_dados_faltantes"] = _computar_dados_faltantes(dados, texto)
+    logger.info(
+        "Extrator deterministico finalizado | faltantes=%s | %.2fs",
+        len(dados["_dados_faltantes"]),
+        time.monotonic() - inicio,
+    )
 
     return dados

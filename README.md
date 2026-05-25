@@ -52,7 +52,7 @@ O pipeline grava logs estruturados em **console e arquivo**:
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `PASTA_LOGS` | `logs` | Pasta dos arquivos `.log` (relativa à raiz do projeto) |
-| `LOG_ARQUIVO` | `nbr12721.log` | Nome do arquivo de log |
+| `LOG_ARQUIVO` | `nbr12721.log` | Nome base; cada execucao gera `nome_YYYYMMDD_HHMMSS.log` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
 Exemplo de linha no arquivo:

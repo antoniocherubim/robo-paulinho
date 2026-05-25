@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 
 from ..settings.config import (
     LIMITE_CHARS_LOTE,
@@ -33,12 +34,14 @@ __all__ = [
 
 def _resolver_poppler_path():
     if POPPLER_PATH:
+        logger.debug("Poppler configurado via POPPLER_PATH: %s", POPPLER_PATH)
         return POPPLER_PATH
     if sys.platform == "win32":
         for p in [r"C:\poppler\Library\bin", r"C:\poppler\bin",
                   r"C:\Program Files\poppler\Library\bin",
                   r"C:\Program Files\poppler\bin"]:
             if os.path.exists(os.path.join(p, "pdftoppm.exe")):
+                logger.debug("Poppler detectado automaticamente: %s", p)
                 return p
     return None
 
@@ -106,13 +109,20 @@ def _ocr_pagina_em_memoria(convert_from_path, pytesseract, caminho, indice, popp
 
 def iterar_texto_pdf_paginas(caminho):
     """Extrai texto de um PDF pagina a pagina, usando OCR somente quando necessario."""
+    inicio_pdf = time.monotonic()
     nome = os.path.basename(caminho)
     poppler_path = _resolver_poppler_path()
+    total_paginas = 0
+    paginas_emitidas = 0
+    paginas_nativas = 0
+    paginas_ocr = 0
+    paginas_parciais = 0
+    paginas_sem_texto = 0
 
     try:
         import pdfplumber
     except ImportError:
-        print("    (pdfplumber nao disponivel - instale as dependencias do requirements.txt)")
+        logger.error("pdfplumber nao disponivel; instale as dependencias do requirements.txt")
         return
 
     try:
@@ -124,14 +134,25 @@ def iterar_texto_pdf_paginas(caminho):
         if TESSERACT_CMD:
             pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
         ocr_disponivel = True
+        logger.debug(
+            "%s: OCR disponivel | dpi=%s | lang=%s | temp_files=%s | grayscale=%s | timeout=%ss",
+            nome,
+            OCR_DPI,
+            TESSERACT_LANG,
+            OCR_USAR_ARQUIVOS_TEMP,
+            OCR_GRAYSCALE,
+            OCR_TIMEOUT_SEGUNDOS,
+        )
     except ImportError:
         convert_from_path = None
         pytesseract = None
         ocr_disponivel = False
+        logger.warning("%s: OCR indisponivel; paginas rasterizadas podem ficar sem texto", nome)
 
     try:
         with pdfplumber.open(caminho) as pdf:
             total_paginas = len(pdf.pages)
+            logger.info("%s: PDF aberto com %s pagina(s)", nome, total_paginas)
             for indice, pagina in enumerate(pdf.pages, start=1):
                 texto_nativo = ""
                 try:
@@ -140,20 +161,45 @@ def iterar_texto_pdf_paginas(caminho):
                     logger.warning("%s pagina %s: falha no texto nativo: %s", nome, indice, e)
 
                 if len(texto_nativo) >= OCR_MIN_CHARS_PAGINA:
-                    print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto_nativo)} chars (texto nativo)")
+                    paginas_emitidas += 1
+                    paginas_nativas += 1
+                    logger.info(
+                        "%s p.%s/%s: %s chars extraidos via texto nativo",
+                        nome,
+                        indice,
+                        total_paginas,
+                        len(texto_nativo),
+                    )
                     yield indice, texto_nativo
                     continue
 
                 if not ocr_disponivel:
                     if texto_nativo:
-                        print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto_nativo)} chars (parcial)")
+                        paginas_emitidas += 1
+                        paginas_parciais += 1
+                        logger.info(
+                            "%s p.%s/%s: %s chars parciais; OCR indisponivel",
+                            nome,
+                            indice,
+                            total_paginas,
+                            len(texto_nativo),
+                        )
                         yield indice, texto_nativo
                     else:
-                        print(f"  x {nome} p.{indice}/{total_paginas} - sem texto")
+                        paginas_sem_texto += 1
+                        logger.warning("%s p.%s/%s: sem texto e OCR indisponivel", nome, indice, total_paginas)
                     continue
 
                 texto_ocr = ""
+                inicio_ocr = time.monotonic()
                 try:
+                    logger.info(
+                        "%s p.%s/%s: texto nativo insuficiente (%s chars); iniciando OCR",
+                        nome,
+                        indice,
+                        total_paginas,
+                        len(texto_nativo),
+                    )
                     if OCR_USAR_ARQUIVOS_TEMP:
                         texto_ocr = _ocr_pagina_com_arquivo_temp(
                             convert_from_path,
@@ -171,19 +217,45 @@ def iterar_texto_pdf_paginas(caminho):
                             poppler_path,
                         )
                 except Exception as e:
-                    print(f"    ({nome} p.{indice}: OCR falhou: {e})")
+                    logger.warning("%s p.%s/%s: OCR falhou: %s", nome, indice, total_paginas, e)
                 finally:
                     gc.collect()
 
                 texto = texto_ocr.strip() or texto_nativo
                 if texto.strip():
                     origem = "OCR" if texto_ocr.strip() else "parcial"
-                    print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto)} chars ({origem})")
+                    paginas_emitidas += 1
+                    if texto_ocr.strip():
+                        paginas_ocr += 1
+                    else:
+                        paginas_parciais += 1
+                    logger.info(
+                        "%s p.%s/%s: %s chars extraidos via %s (%.2fs)",
+                        nome,
+                        indice,
+                        total_paginas,
+                        len(texto),
+                        origem,
+                        time.monotonic() - inicio_ocr,
+                    )
                     yield indice, texto
                 else:
-                    print(f"  x {nome} p.{indice}/{total_paginas} - sem texto")
+                    paginas_sem_texto += 1
+                    logger.warning("%s p.%s/%s: sem texto apos OCR", nome, indice, total_paginas)
     except Exception as e:
-        print(f"    ({nome}: falha ao abrir PDF: {e})")
+        logger.error("%s: falha ao abrir/processar PDF: %s", nome, e)
+    finally:
+        logger.info(
+            "%s: processamento finalizado | paginas=%s | emitidas=%s | nativo=%s | ocr=%s | parcial=%s | sem_texto=%s | %.2fs",
+            nome,
+            total_paginas,
+            paginas_emitidas,
+            paginas_nativas,
+            paginas_ocr,
+            paginas_parciais,
+            paginas_sem_texto,
+            time.monotonic() - inicio_pdf,
+        )
 
 
 def extrair_texto_pdf(caminho):
@@ -690,11 +762,23 @@ def prefiltrar_texto(texto, verbose=True):
 
     if verbose:
         reducao_total = (1 - tam_final / tam_original) * 100 if tam_original > 0 else 0
-        print(f"  > Pre-filtragem:")
-        print(f"    Original:        {tam_original:>8,} chars")
-        print(f"    Apos limpeza:    {tam_camada1:>8,} chars  ({(1-tam_camada1/tam_original)*100:5.1f}% reduzido)")
-        print(f"    Apos relevancia: {tam_camada2:>8,} chars  ({(1-tam_camada2/tam_original)*100:5.1f}% reduzido)")
-        print(f"    Apos dedup:      {tam_final:>8,} chars  ({reducao_total:5.1f}% reduzido)")
+        logger.info(
+            "Pre-filtragem: original=%s | limpeza=%s (%.1f%% reduzido) | relevancia=%s (%.1f%% reduzido) | final=%s (%.1f%% reduzido)",
+            tam_original,
+            tam_camada1,
+            (1 - tam_camada1 / tam_original) * 100,
+            tam_camada2,
+            (1 - tam_camada2 / tam_original) * 100,
+            tam_final,
+            reducao_total,
+        )
+    logger.debug(
+        "Pre-filtragem detalhada: evidencias=%s chars | blocos=%s | relevantes=%s | finais=%s",
+        len(evidencias_criticas),
+        len(blocos),
+        len(blocos_relevantes),
+        len(blocos_finais),
+    )
 
     return texto_final
 
@@ -716,6 +800,7 @@ def separar_documentos(textos):
             corpo = trecho
         if corpo:
             docs.append({"nome": nome.strip(), "texto": corpo})
+    logger.debug("Separacao de documentos: %s documento(s)", len(docs))
     return docs
 
 
@@ -755,4 +840,10 @@ def dividir_lotes_documentos(documentos, limite_chars=LIMITE_CHARS_LOTE):
     if lote_atual:
         lotes.append("\n\n".join(lote_atual))
 
+    logger.debug(
+        "Divisao em lotes: documentos=%s | lotes=%s | limite_chars=%s",
+        len(documentos),
+        len(lotes),
+        limite_chars,
+    )
     return lotes

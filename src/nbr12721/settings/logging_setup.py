@@ -1,19 +1,24 @@
 """Configuracao central de logging: console + arquivo em logs/."""
 import logging
 import os
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 RAIZ_PROJETO = Path(__file__).resolve().parents[3]
 _CONFIGURADO = False
+_CAMINHO_LOG: Path | None = None
 
 
 def reset_logging() -> None:
     """Reinicia estado (util em testes)."""
-    global _CONFIGURADO
+    global _CAMINHO_LOG, _CONFIGURADO
     _CONFIGURADO = False
+    _CAMINHO_LOG = None
     logger_raiz = logging.getLogger("nbr12721")
-    logger_raiz.handlers.clear()
+    for handler in list(logger_raiz.handlers):
+        logger_raiz.removeHandler(handler)
+        handler.close()
 
 _FORMATO = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 _FORMATO_DATA = "%Y-%m-%d %H:%M:%S"
@@ -30,12 +35,20 @@ def _resolver_pasta_logs() -> Path:
     return pasta
 
 
+def _nome_log_com_timestamp(nome_base: str) -> str:
+    caminho_base = Path(nome_base)
+    stem = caminho_base.stem or "nbr12721"
+    sufixo = caminho_base.suffix or ".log"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{stem}_{timestamp}{sufixo}"
+
+
 def configurar_logging() -> Path:
     """Configura logger raiz nbr12721 (idempotente). Retorna caminho do arquivo .log."""
-    global _CONFIGURADO
+    global _CAMINHO_LOG, _CONFIGURADO
     pasta_logs = _resolver_pasta_logs()
     nome_arquivo = os.environ.get("LOG_ARQUIVO", "nbr12721.log").strip() or "nbr12721.log"
-    caminho_log = pasta_logs / nome_arquivo
+    caminho_log = pasta_logs / _nome_log_com_timestamp(nome_arquivo)
 
     nivel_nome = os.environ.get("LOG_LEVEL", "INFO").strip().upper() or "INFO"
     nivel = getattr(logging, nivel_nome, logging.INFO)
@@ -44,7 +57,7 @@ def configurar_logging() -> Path:
 
     logger_raiz = logging.getLogger("nbr12721")
     if _CONFIGURADO:
-        return caminho_log
+        return _CAMINHO_LOG if _CAMINHO_LOG is not None else caminho_log
 
     logger_raiz.setLevel(nivel)
     logger_raiz.handlers.clear()
@@ -66,6 +79,7 @@ def configurar_logging() -> Path:
 
     logging.getLogger("nbr12721").setLevel(nivel)
     _CONFIGURADO = True
+    _CAMINHO_LOG = caminho_log
 
     logger_raiz.info("Logging iniciado | arquivo=%s | nivel=%s", caminho_log, nivel_nome)
     return caminho_log

@@ -45,12 +45,20 @@ def _formatar_bloco_pagina(pdf, pagina, texto):
 async def executar_pipeline():
     usar_deterministico = usar_extracao_deterministica()
     usar_fallback = usar_fallback_llm()
+    json_only = somente_json()
     logger.info("=" * 60)
     logger.info("NBR 12721:2006 - PREENCHIMENTO AUTOMATICO")
     if usar_deterministico:
         logger.info("Modo: extrator deterministico (sem LLM)")
     else:
         logger.info("Powered by LLM multi-provider (Anthropic / OpenAI)")
+    logger.info(
+        "Flags: deterministico=%s | fallback_llm=%s | json_only=%s | skip_extracao=%s",
+        usar_deterministico,
+        usar_fallback,
+        json_only,
+        "--skip-extracao" in sys.argv,
+    )
     logger.info("=" * 60)
 
     if not os.path.exists(PLANILHA):
@@ -94,6 +102,9 @@ async def executar_pipeline():
             path_textos_filtrados, "w", encoding="utf-8"
         ) as filtrado_f:
             for pdf in pdfs:
+                paginas_pdf = 0
+                bruto_pdf = 0
+                filtrado_pdf = 0
                 logger.info("Processando PDF: %s", os.path.basename(pdf))
                 for pagina, texto_pagina in iterar_texto_pdf_paginas(pdf):
                     bloco = _formatar_bloco_pagina(pdf, pagina, texto_pagina)
@@ -101,6 +112,8 @@ async def executar_pipeline():
                     bruto_f.flush()
                     total_bruto += len(bloco)
                     total_paginas += 1
+                    paginas_pdf += 1
+                    bruto_pdf += len(bloco)
 
                     bloco_filtrado = prefiltrar_texto(bloco, verbose=False)
                     if bloco_filtrado.strip():
@@ -108,6 +121,14 @@ async def executar_pipeline():
                         filtrado_f.write("\n\n")
                         filtrado_f.flush()
                         total_filtrado += len(bloco_filtrado)
+                        filtrado_pdf += len(bloco_filtrado)
+                logger.info(
+                    "PDF finalizado: %s | paginas_extraidas=%s | bruto=%s chars | filtrado=%s chars",
+                    os.path.basename(pdf),
+                    paginas_pdf,
+                    bruto_pdf,
+                    filtrado_pdf,
+                )
 
         if total_bruto <= 0:
             logger.error("Nenhum texto extraido dos PDFs")
@@ -130,7 +151,12 @@ async def executar_pipeline():
 
     logger.info("Total filtrado disponivel: %s chars", len(textos))
 
+    logger.info("Buscando informacoes CUB...")
     cub_info = buscar_cub_sinduscon()
+    if cub_info and cub_info.get("valores"):
+        logger.info("CUB disponivel: %s tipo(s) | mes=%s", len(cub_info["valores"]), cub_info.get("mesAno", "?"))
+    else:
+        logger.warning("CUB indisponivel; quadro3.valorCub pode permanecer vazio")
 
     if usar_deterministico:
         logger.info("Extraindo dados em modo deterministico (sem LLM)...")
@@ -166,8 +192,10 @@ async def executar_pipeline():
         )
 
     os.makedirs(PASTA_SAIDA, exist_ok=True)
-    with open(caminho_saida(ARQ_DADOS_JSON), "w", encoding="utf-8") as f:
+    caminho_dados_json = caminho_saida(ARQ_DADOS_JSON)
+    with open(caminho_dados_json, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
+    logger.info("Dados extraidos salvos: %s", caminho_dados_json)
 
     inc = dados.get("incorporador", {})
     proj = dados.get("projeto", {})
@@ -195,7 +223,7 @@ async def executar_pipeline():
         for item in falta:
             logger.warning("  - %s", item)
 
-    if somente_json():
+    if json_only:
         logger.info("Modo --json-only: planilha nao sera preenchida.")
         return
 
