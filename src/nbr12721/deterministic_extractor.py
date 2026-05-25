@@ -76,6 +76,58 @@ _RE_APTOS_POR_PAV = re.compile(
     r"\b(\d+)\s*APTOS?\s*/\s*PAV\b",
     re.IGNORECASE,
 )
+_RE_LOCAL_OBRA = re.compile(
+    r"LOCAL\s+DA\s+OBRA\s*:?\s*(.+)",
+    re.IGNORECASE,
+)
+_RE_ENDERECO_OBRA = re.compile(
+    r"ENDE[RRE][CÇ]O\s+DA\s+OBRA\s*:?\s*(.+)",
+    re.IGNORECASE,
+)
+_RE_SITUADO = re.compile(
+    r"^SITUAD[OA]\s+NO\s+(.+)",
+    re.IGNORECASE,
+)
+_RE_PROCESSO_APROVACAO = re.compile(
+    r"Processo\s+Aprova[cç][aã]o\s+n[°ºo.]?\s*([\d./-]+)",
+    re.IGNORECASE,
+)
+_RE_INCORPORADOR_ROTULO = re.compile(
+    r"(?:INCORPORADOR|INCORPORADORA|CONSTRUTORA|PROPRIET[AÁ]RIO)\s*:?\s*(.+)",
+    re.IGNORECASE,
+)
+_RE_PAGOTTO = re.compile(r"PAGOTTO\s*[_\-]\s*(.+)", re.IGNORECASE)
+_RE_CORTE_MARCADOR_ADMIN = re.compile(
+    r"\b(?:Processo|N[°ºo.]|ALVAR[AÁ]|CREA|CAU|CNPJ)\b",
+    re.IGNORECASE,
+)
+_RE_NOME_EDIFICIO_ROTULO = re.compile(
+    r"(?:NOME\s+DO\s+EDIF[IÍ]CIO|EMPREENDIMENTO)\s*:?\s*(.+)",
+    re.IGNORECASE,
+)
+_RE_EDIFICIO_LINHA = re.compile(
+    r"^EDIF[IÍ]CIO\s+(.+)",
+    re.IGNORECASE,
+)
+_RE_PROFISSAO_SPLIT = re.compile(
+    r"\b(?:ENGENHEIR[OA]|ARQUITET[OA]|CREA|CAU)\b",
+    re.IGNORECASE,
+)
+_RE_PROFISSAO_NOME = re.compile(
+    r"\b(?:ENGENHEIR[OA]|ARQUITET[OA])(?:\s+CIVIL|\s+URBANISTA)?\b",
+    re.IGNORECASE,
+)
+_RE_NOME_RESP_INVALIDO = re.compile(
+    r"\b(?:Processo|PAGOTTO|CNPJ|ALVAR[AÁ]|N[°ºo.])\b",
+    re.IGNORECASE,
+)
+_RE_LOGRADOURO = re.compile(
+    r"\b(?:rua|avenida|av\.|travessa|alameda)\b",
+    re.IGNORECASE,
+)
+_RE_CEP = re.compile(r"\d{5}-?\d{3}")
+_RE_TEL = re.compile(r"\[\d+\]")
+_RE_EMAIL = re.compile(r"@")
 
 
 def _esqueleto_vazio() -> dict:
@@ -462,6 +514,177 @@ def _normalizar_linha_ocr(linha: str) -> str:
     return re.sub(r"\s+", " ", linha.strip())
 
 
+def _limpar_texto_campo(texto: str) -> str:
+    return re.sub(r"\s+", " ", texto.strip())
+
+
+def _eh_apenas_cidade_uf(texto: str) -> bool:
+    limpo = _limpar_texto_campo(texto)
+    return bool(
+        re.fullmatch(
+            r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ \t]*[-/][A-Z]{2}",
+            limpo,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _extrair_local_construcao(texto: str) -> str:
+    for linha in texto.splitlines():
+        linha_n = _normalizar_linha_ocr(linha)
+        for padrao in (_RE_LOCAL_OBRA, _RE_ENDERECO_OBRA):
+            m = padrao.search(linha_n)
+            if m:
+                valor = _limpar_texto_campo(m.group(1))
+                if valor and not _eh_apenas_cidade_uf(valor):
+                    return valor
+    for linha in texto.splitlines():
+        linha_n = _normalizar_linha_ocr(linha)
+        m = _RE_SITUADO.match(linha_n)
+        if m:
+            valor = _limpar_texto_campo(m.group(1))
+            if valor and not _eh_apenas_cidade_uf(valor):
+                return valor
+    return ""
+
+
+def _nome_candidato_invalido(nome: str) -> bool:
+    return bool(_RE_NOME_RESP_INVALIDO.search(nome))
+
+
+def _nome_antes_profissao(linha: str, *, somente_engenheiro_arquiteto: bool = False) -> str:
+    padrao = (
+        _RE_PROFISSAO_NOME if somente_engenheiro_arquiteto else _RE_PROFISSAO_SPLIT
+    )
+    m = padrao.search(linha)
+    if not m:
+        return ""
+    antes = _limpar_texto_campo(linha[: m.start()].strip(" -–—"))
+    if not antes:
+        return ""
+    if _nome_candidato_invalido(antes):
+        return ""
+    palavras = [p for p in antes.split() if re.search(r"[A-Za-zÀ-ÿ]", p, re.IGNORECASE)]
+    if len(palavras) < 2:
+        return ""
+    if re.fullmatch(
+        r"(?:ENGENHEIR[OA]|ARQUITET[OA])(?:\s+CIVIL|\s+URBANISTA)?",
+        antes,
+        flags=re.IGNORECASE,
+    ):
+        return ""
+    return antes
+
+
+def _extrair_responsavel_nome(texto: str, crea: str = "") -> str:
+    if _texto_menciona_crea(texto):
+        for linha in texto.splitlines():
+            if re.search(r"CREA", linha, re.IGNORECASE):
+                nome = _nome_antes_profissao(
+                    linha, somente_engenheiro_arquiteto=True
+                )
+                if nome:
+                    return nome
+        return ""
+    for linha in texto.splitlines():
+        if re.search(r"CAU", linha, re.IGNORECASE):
+            nome = _nome_antes_profissao(linha)
+            if nome:
+                return nome
+    return ""
+
+
+def _extrair_responsavel_endereco(texto: str) -> str:
+    for linha in texto.splitlines():
+        linha_n = _normalizar_linha_ocr(linha)
+        if not _RE_LOGRADOURO.search(linha_n):
+            continue
+        if (
+            _RE_CEP.search(linha_n)
+            or _RE_TEL.search(linha_n)
+            or _RE_EMAIL.search(linha_n)
+        ):
+            return _limpar_texto_campo(linha_n)
+    return ""
+
+
+def _cortar_nome_incorporador(valor: str) -> str:
+    cortado = valor
+    m = _RE_CORTE_MARCADOR_ADMIN.search(valor)
+    if m:
+        cortado = valor[: m.start()]
+    return _limpar_texto_campo(cortado.strip(" -–—"))
+
+
+def _extrair_incorporador_nome(texto: str) -> str:
+    for linha in texto.splitlines():
+        m = _RE_INCORPORADOR_ROTULO.search(linha)
+        if m:
+            nome = _cortar_nome_incorporador(m.group(1))
+            if nome:
+                return nome
+    for linha in texto.splitlines():
+        m = _RE_PAGOTTO.search(linha)
+        if m:
+            nome = _cortar_nome_incorporador(m.group(1))
+            if nome:
+                return nome
+    return ""
+
+
+def _extrair_nome_edificio(texto: str, designacao: str = "") -> str:
+    designacao_norm = designacao.upper().strip()
+
+    def _aceito(nome: str) -> bool:
+        if not nome:
+            return False
+        if nome.upper().startswith("RESIDENCIAL MULTIFAMILIAR"):
+            return False
+        if designacao_norm and nome.upper() in designacao_norm:
+            return False
+        return True
+
+    for linha in texto.splitlines():
+        m = _RE_NOME_EDIFICIO_ROTULO.search(linha)
+        if m:
+            nome = _limpar_texto_campo(m.group(1))
+            if _aceito(nome):
+                return nome
+    for linha in texto.splitlines():
+        linha_n = _normalizar_linha_ocr(linha)
+        if linha_n.upper().startswith("EDIFICAÇÃO") or linha_n.upper().startswith(
+            "EDIFICACAO"
+        ):
+            continue
+        m = _RE_EDIFICIO_LINHA.match(linha_n)
+        if m:
+            nome = _limpar_texto_campo(m.group(1))
+            if _aceito(nome):
+                return nome
+    return ""
+
+
+def _extrair_processo_aprovacao(texto: str) -> str:
+    m = _RE_PROCESSO_APROVACAO.search(texto)
+    if not m:
+        return ""
+    return _limpar_texto_campo(f"Processo Aprovação nº {m.group(1)}")
+
+
+def _montar_outras_indicacoes(dados: dict, texto: str) -> str:
+    partes: list[str] = []
+    processo = _extrair_processo_aprovacao(texto)
+    if processo:
+        partes.append(processo)
+    alvara = dados["projeto"].get("numAlvara", "")
+    if alvara:
+        partes.append(f"Alvará {alvara}")
+    local = dados["projeto"].get("localConstrucao", "")
+    if local:
+        partes.append(f"Local: {local}")
+    return "; ".join(partes)
+
+
 def _formatar_area_designacao(area: float) -> str:
     texto = f"{area:.4f}".rstrip("0").rstrip(".")
     return texto.replace(".", ",")
@@ -580,6 +803,7 @@ def _preencher_quadro5(dados: dict, texto: str) -> None:
     if proj["vagasAcessorio"] > 0:
         partes_garagem.append(f"{proj['vagasAcessorio']} vagas duplas")
     q5["garagens"] = "; ".join(partes_garagem)
+    q5["outrasIndicacoes"] = _montar_outras_indicacoes(dados, texto)
 
 
 def _texto_menciona_vagas_comuns(texto: str) -> bool:
@@ -599,6 +823,37 @@ def _quadro2_apenas_template(unidades: list[dict]) -> bool:
         return False
     u = unidades[0]
     return not u.get("designacao") and u.get("areaPrivCobPadrao", 0) == 0
+
+
+def _texto_menciona_incorporador(texto: str) -> bool:
+    return bool(
+        re.search(
+            r"INCORPORADOR|INCORPORADORA|CONSTRUTORA|PROPRIET[AÁ]RIO|PAGOTTO",
+            texto,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _texto_menciona_local_obra(texto: str) -> bool:
+    return bool(
+        re.search(
+            r"LOCAL\s+DA\s+OBRA|ENDE[RRE][CÇ]O\s+DA\s+OBRA|"
+            r"SITUAD[OA]\s+NO",
+            texto,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _texto_menciona_nome_edificio(texto: str) -> bool:
+    return bool(
+        re.search(
+            r"NOME\s+DO\s+EDIF[IÍ]CIO|EMPREENDIMENTO",
+            texto,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _computar_dados_faltantes(dados: dict, texto: str) -> list[str]:
@@ -636,31 +891,48 @@ def _computar_dados_faltantes(dados: dict, texto: str) -> list[str]:
         texto
     ):
         faltantes.append("quadro2.unidades")
+    if not inc.get("nome") and _texto_menciona_incorporador(texto):
+        faltantes.append("incorporador.nome")
+    if _texto_menciona_crea(texto) and not resp.get("nome"):
+        faltantes.append("responsavel.nome")
+    if not proj.get("localConstrucao") and _texto_menciona_local_obra(texto):
+        faltantes.append("projeto.localConstrucao")
+    if not proj.get("nomeEdificio") and _texto_menciona_nome_edificio(texto):
+        faltantes.append("projeto.nomeEdificio")
 
     return faltantes
 
 
 def extrair_dados_deterministico(texto: str) -> dict:
-    """Extrai campos minimos do texto e retorna dict no schema de dados_extraidos.json."""
+    """Extrai campos do texto e retorna dict no schema de dados_extraidos.json."""
     dados = _esqueleto_vazio()
 
+    # Task 1: campos base
     dados["incorporador"]["cnpj"] = _extrair_cnpj(texto)
     dados["projeto"]["cidadeUf"] = _extrair_cidade_uf(texto)
     dados["projeto"]["dataAprovacao"] = _extrair_data_aprovacao(texto)
     dados["projeto"]["numAlvara"] = _extrair_num_alvara(texto)
     dados["projeto"]["areaTerreno"] = _extrair_area_terreno(texto)
     dados["projeto"]["projetoPadrao"]["R"] = _detectar_padrao_r(texto)
-
     designacao = _extrair_designacao(texto)
     dados["quadro3"]["projetoPadrao"]["designacao"] = designacao
 
-    dados["responsavel"]["crea"] = _extrair_crea(texto)
-
+    # Task 2: unidades, pavimentos, vagas
     dados["quadro2"]["unidades"] = _extrair_unidades_quadro2(texto)
     dados["projeto"]["qtdUnidades"] = _extrair_qtd_unidades(texto)
     dados["projeto"]["numPavimentos"] = _extrair_num_pavimentos(texto)
     dados["projeto"]["vagasComum"] = _extrair_vagas_comuns(texto)
     dados["projeto"]["vagasAcessorio"] = _extrair_vagas_duplas(texto)
+
+    # Task 3: local, responsavel, incorporador, edificio
+    dados["projeto"]["localConstrucao"] = _extrair_local_construcao(texto)
+    dados["responsavel"]["crea"] = _extrair_crea(texto)
+    dados["responsavel"]["nome"] = _extrair_responsavel_nome(
+        texto, dados["responsavel"]["crea"]
+    )
+    dados["responsavel"]["endereco"] = _extrair_responsavel_endereco(texto)
+    dados["incorporador"]["nome"] = _extrair_incorporador_nome(texto)
+    dados["projeto"]["nomeEdificio"] = _extrair_nome_edificio(texto, designacao)
 
     _preencher_quadro5(dados, texto)
     dados["_dados_faltantes"] = _computar_dados_faltantes(dados, texto)

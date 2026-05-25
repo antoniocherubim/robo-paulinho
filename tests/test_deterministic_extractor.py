@@ -197,6 +197,84 @@ TOTAL DE VAGAS DUPLAS: 21 VAGAS
         )
         self.assertEqual(dados["quadro5"]["unidadesPorPav"], "6 APTOS/PAV")
 
+    def test_extrai_local_construcao(self):
+        texto = """
+LOCAL DA OBRA: RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO
+LONDRINA-PR
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["projeto"]["localConstrucao"],
+            "RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO",
+        )
+
+    def test_extrai_responsavel_nome_crea(self):
+        texto = "IVAN I. GONÇALVES DA SILVA - ENGENHEIRA CIVIL - CREA PR-27711/D"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["responsavel"]["nome"],
+            "IVAN I. GONÇALVES DA SILVA",
+        )
+        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+
+    def test_nao_inventa_nome_responsavel_sem_nome(self):
+        texto = "ENGENHEIRA CIVIL - CREA PR-27711/D"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["responsavel"]["nome"], "")
+        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+
+    def test_nao_usa_linha_administrativa_com_crea_como_responsavel(self):
+        texto = (
+            "Processo Aprovação nº 19.021.125875/2023-06 "
+            "PAGOTTO _ MARCELO PAGOTTO CREA PR-27711/D"
+        )
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["responsavel"]["nome"], "")
+        self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
+
+    def test_extrai_responsavel_endereco(self):
+        texto = (
+            "rua joão wyclif 111 sl 107 : 86050-450 palhano : "
+            "londrina-pr : [43]3028-3990 : contato@vianiarquitetura.com.br"
+        )
+        dados = extrair_dados_deterministico(texto)
+        self.assertIn(
+            "rua joão wyclif 111",
+            dados["responsavel"]["endereco"].lower(),
+        )
+
+    def test_extrai_incorporador_nome_por_rotulo(self):
+        texto = """
+INCORPORADOR: MARCELO PAGOTTO
+CNPJ10.910.7480001-85
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["nome"], "MARCELO PAGOTTO")
+
+    def test_extrai_incorporador_nome_pagotto(self):
+        texto = (
+            "Processo Aprovação nº 19.021.125875/2023-06 PAGOTTO _ MARCELO PAGOTTO"
+        )
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["nome"], "MARCELO PAGOTTO")
+
+    def test_extrai_nome_edificio_por_rotulo(self):
+        texto = "NOME DO EDIFÍCIO: RESIDENCIAL ALPHA"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["nomeEdificio"], "RESIDENCIAL ALPHA")
+
+    def test_quadro5_outras_indicacoes(self):
+        texto = """
+Processo Aprovação nº 19.021.125875/2023-06
+Nº de ALVARÁ: 2457/2023
+LOCAL DA OBRA: RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO
+"""
+        dados = extrair_dados_deterministico(texto)
+        outras = dados["quadro5"]["outrasIndicacoes"]
+        self.assertIn("19.021.125875/2023-06", outras)
+        self.assertIn("2457/2023", outras)
+        self.assertIn("RIBEIRÃO DA ESPERANÇA", outras)
+
 
 if __name__ == "__main__":
     unittest.main()
