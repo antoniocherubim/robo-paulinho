@@ -275,6 +275,71 @@ LOCAL DA OBRA: RIBEIRÃO DA ESPERANÇA, FAZENDA PALHANO
         self.assertIn("2457/2023", outras)
         self.assertIn("RIBEIRÃO DA ESPERANÇA", outras)
 
+    def test_quadro1_extrai_pavimento_tipo_por_unidades(self):
+        texto = """
+(1º AO 20º) PAV. TIPO - 66,02 X 160 APTOS
+(1º AO 20º) PAV. TIPO - 65,985 X 80 APTOS
+(1º AO 20º) PAV. TIPO - 55,00 X 80 APTOS
+"""
+        dados = extrair_dados_deterministico(texto)
+        pavs = dados["quadro1"]["pavimentos"]
+        self.assertEqual(len(pavs), 1)
+        self.assertEqual(pavs[0]["nome"], "Pavimentos tipo")
+        self.assertAlmostEqual(pavs[0]["areaPrivCobPadrao"], 20242.0)
+        self.assertEqual(pavs[0]["qtdPavimentos"], 20)
+
+    def test_quadro1_pavimento_tipo_nao_cria_sem_intervalo(self):
+        texto = "66,02 X 160 APTOS"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["quadro1"]["pavimentos"][0]["nome"], "")
+
+    def test_quadro1_extrai_terreo_lazer_coberto_descoberto(self):
+        texto = """
+ÁREA DE LAZER COBERTA PAV. TÉRREO = 1.275,94m²
+ÁREA DE LAZER DESCOBERTA PAV. TÉRREO = 1.989,19m²
+"""
+        dados = extrair_dados_deterministico(texto)
+        pav = dados["quadro1"]["pavimentos"][0]
+        self.assertEqual(pav["nome"], "Pavimento térreo")
+        self.assertAlmostEqual(pav["areaComumPCobPadrao"], 1275.94)
+        self.assertAlmostEqual(pav["areaComumNPCobPadrao"], 1989.19)
+
+    def test_quadro1_area_total_terreo_fallback(self):
+        texto = "ÁREA PAVIMENTO TÉRREO: 4.211,29 m²"
+        dados = extrair_dados_deterministico(texto)
+        pav = dados["quadro1"]["pavimentos"][0]
+        self.assertEqual(pav["nome"], "Pavimento térreo")
+        self.assertAlmostEqual(pav["areaComumPCobPadrao"], 4211.29)
+        self.assertAlmostEqual(pav["areaComumNPCobPadrao"], 0)
+
+    def test_quadro1_extrai_cobertura_com_area(self):
+        texto = "COBERTURA - ÁREA: 250,00 m²"
+        dados = extrair_dados_deterministico(texto)
+        pav = dados["quadro1"]["pavimentos"][0]
+        self.assertEqual(pav["nome"], "Cobertura")
+        self.assertAlmostEqual(pav["areaPrivCobPadrao"], 250.0)
+
+    def test_quadro1_nao_cria_cobertura_sem_area(self):
+        dados = extrair_dados_deterministico("COBERTURA")
+        pav = dados["quadro1"]["pavimentos"][0]
+        self.assertEqual(pav["nome"], "")
+        self.assertIn("quadro1.pavimentos", dados["_dados_faltantes"])
+
+    def test_quadro1_ordem_terreo_tipo_cobertura(self):
+        texto = """
+ÁREA DE LAZER COBERTA PAV. TÉRREO = 1.275,94m²
+ÁREA DE LAZER DESCOBERTA PAV. TÉRREO = 1.989,19m²
+(1º AO 20º) PAV. TIPO - 66,02 X 160 APTOS
+(1º AO 20º) PAV. TIPO - 65,985 X 80 APTOS
+(1º AO 20º) PAV. TIPO - 55,00 X 80 APTOS
+COBERTURA - ÁREA: 250,00 m²
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            [p["nome"] for p in dados["quadro1"]["pavimentos"]],
+            ["Pavimento térreo", "Pavimentos tipo", "Cobertura"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

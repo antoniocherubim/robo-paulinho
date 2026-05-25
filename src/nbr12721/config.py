@@ -77,6 +77,9 @@ OCR_GRAYSCALE = _resolver_bool_env("OCR_GRAYSCALE", True)
 OCR_TIMEOUT_SEGUNDOS = _resolver_int_env("OCR_TIMEOUT_SEGUNDOS", 120)
 OCR_MAX_IMAGE_PIXELS = _resolver_int_env("OCR_MAX_IMAGE_PIXELS", 120_000_000)
 
+# --- Extracao deterministica (sem LLM) ---
+EXTRACAO_DETERMINISTICA = _resolver_bool_env("EXTRACAO_DETERMINISTICA", False)
+
 # --- Artefatos de saida (basename) ---
 ARQ_PLANILHA_SAIDA = "NBR_12721_preenchida.xlsx"
 ARQ_TEXTO_EXTRAIDO = "textos_extraidos.txt"

@@ -12,6 +12,7 @@ from .config import (
     ARQ_RESUMOS_LOTES,
     ARQ_TEXTO_EXTRAIDO,
     ARQ_TEXTO_FILTRADO,
+    EXTRACAO_DETERMINISTICA,
     LIMITE_CHARS_PROMPT_FINAL,
     PASTA_DOCS,
     PASTA_SAIDA,
@@ -19,6 +20,7 @@ from .config import (
     caminho_saida,
 )
 from .cub import buscar_cub_sinduscon, formatar_cub_contexto
+from .deterministic_extractor import extrair_dados_deterministico
 from .excel_writer import preencher_planilha
 from .formatacao import formatar_brl
 from .llm import chamar_llm
@@ -34,6 +36,44 @@ from .serialization import compactar_resumos, parsear_json
 logger = logging.getLogger(__name__)
 
 __all__ = ["executar_pipeline"]
+
+
+def _usar_extracao_deterministica(argv=None) -> bool:
+    argv = sys.argv if argv is None else argv
+    return EXTRACAO_DETERMINISTICA or "--deterministico" in argv
+
+
+def _somente_json(argv=None) -> bool:
+    argv = sys.argv if argv is None else argv
+    return "--json-only" in argv
+
+
+def _preencher_cub_automatico(dados: dict, cub_info: dict | None) -> None:
+    if not cub_info or not cub_info.get("valores"):
+        return
+    q3 = dados.setdefault("quadro3", {})
+    if q3.get("valorCub"):
+        return
+    pp = dados.get("projeto", {}).get("projetoPadrao", {})
+    pp3 = q3.get("projetoPadrao", {})
+    candidatos = [
+        str(pp3.get("padrao", "")).strip().upper(),
+        "CSL-8" if pp.get("CS") else "",
+        "R4-N" if pp.get("R") else "",
+        "R1-N" if pp.get("R") else "",
+    ]
+    tipo = next((t for t in candidatos if t and t in cub_info["valores"]), "")
+    if not tipo:
+        return
+    q3["valorCub"] = cub_info["valores"][tipo]
+    q3["sindicato"] = cub_info["sindicato"]
+    q3["mesCub"] = cub_info["mesAno"]
+    logger.info(
+        "CUB preenchido automaticamente: %s = R$ %s (%s)",
+        tipo,
+        formatar_brl(q3["valorCub"]),
+        cub_info["mesAno"],
+    )
 
 
 def _extrair_evidencias_criticas(textos, limite_chars=12000):
@@ -97,9 +137,13 @@ async def _resumir_lotes_documentos(textos):
 
 
 async def executar_pipeline():
+    usar_deterministico = _usar_extracao_deterministica()
     logger.info("=" * 60)
     logger.info("NBR 12721:2006 - PREENCHIMENTO AUTOMATICO")
-    logger.info("Powered by LLM multi-provider (Anthropic / OpenAI)")
+    if usar_deterministico:
+        logger.info("Modo: extrator deterministico (sem LLM)")
+    else:
+        logger.info("Powered by LLM multi-provider (Anthropic / OpenAI)")
     logger.info("=" * 60)
 
     if not os.path.exists(PLANILHA):
@@ -180,73 +224,64 @@ async def executar_pipeline():
     logger.info("Total filtrado disponivel: %s chars", len(textos))
 
     cub_info = buscar_cub_sinduscon()
-    cub_ctx = formatar_cub_contexto(cub_info)
 
-    resumos_lotes = await _resumir_lotes_documentos(textos)
-    texto_resumido = compactar_resumos(resumos_lotes)
-    evidencias_criticas = _extrair_evidencias_criticas(textos)
-    if evidencias_criticas:
-        texto_resumido = (
-            f"{evidencias_criticas}\n\n"
-            f"RESUMO CONSOLIDADO DOS LOTES:\n{texto_resumido}"
-        )
-    with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
-        f.write(texto_resumido)
-    logger.info("Resumo consolidado: %s chars", len(texto_resumido))
-
-    if len(texto_resumido) > LIMITE_CHARS_PROMPT_FINAL:
-        logger.warning(
-            "Resumo ainda grande (%s chars), truncando para %s",
-            len(texto_resumido),
-            LIMITE_CHARS_PROMPT_FINAL,
-        )
-        texto_resumido = texto_resumido[:LIMITE_CHARS_PROMPT_FINAL]
-
-    prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
-        "{cub_contexto}", cub_ctx
-    )
-
-    logger.info("Enviando consolidacao final para o LLM...")
-    resposta = await chamar_llm(prompt_completo)
-
-    if not resposta:
-        logger.error("LLM nao disponivel")
-        logger.error("Instale: pip install anthropic openai claude-agent-sdk")
-        logger.error("Ou configure Claude CLI: npm install -g @anthropic-ai/claude-code")
-        sys.exit(1)
-
-    logger.info("Processando resposta JSON...")
-    try:
-        dados = parsear_json(resposta)
-    except json.JSONDecodeError as e:
+    if usar_deterministico:
+        logger.info("Extraindo dados em modo deterministico (sem LLM)...")
+        dados = extrair_dados_deterministico(textos)
         os.makedirs(PASTA_SAIDA, exist_ok=True)
-        with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
-            f.write(resposta)
-        logger.error("Erro JSON: %s | Resposta salva em %s", e, caminho_saida(ARQ_RESPOSTA_BRUTA))
-        sys.exit(1)
+        with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
+            f.write("(modo deterministico: resumo LLM nao gerado)\n")
+    else:
+        cub_ctx = formatar_cub_contexto(cub_info)
 
-    if cub_info and cub_info.get("valores"):
-        q3 = dados.setdefault("quadro3", {})
-        if not q3.get("valorCub"):
-            pp = dados.get("projeto", {}).get("projetoPadrao", {})
-            pp3 = q3.get("projetoPadrao", {})
-            candidatos = [
-                str(pp3.get("padrao", "")).strip().upper(),
-                "CSL-8" if pp.get("CS") else "",
-                "R4-N" if pp.get("R") else "",
-                "R1-N" if pp.get("R") else "",
-            ]
-            tipo = next((t for t in candidatos if t and t in cub_info["valores"]), "")
-            if tipo:
-                q3["valorCub"] = cub_info["valores"][tipo]
-                q3.setdefault("sindicato", cub_info["sindicato"])
-                q3.setdefault("mesCub", cub_info["mesAno"])
-                logger.info(
-                    "CUB preenchido automaticamente: %s = R$ %s (%s)",
-                    tipo,
-                    formatar_brl(q3["valorCub"]),
-                    cub_info["mesAno"],
-                )
+        resumos_lotes = await _resumir_lotes_documentos(textos)
+        texto_resumido = compactar_resumos(resumos_lotes)
+        evidencias_criticas = _extrair_evidencias_criticas(textos)
+        if evidencias_criticas:
+            texto_resumido = (
+                f"{evidencias_criticas}\n\n"
+                f"RESUMO CONSOLIDADO DOS LOTES:\n{texto_resumido}"
+            )
+        with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
+            f.write(texto_resumido)
+        logger.info("Resumo consolidado: %s chars", len(texto_resumido))
+
+        if len(texto_resumido) > LIMITE_CHARS_PROMPT_FINAL:
+            logger.warning(
+                "Resumo ainda grande (%s chars), truncando para %s",
+                len(texto_resumido),
+                LIMITE_CHARS_PROMPT_FINAL,
+            )
+            texto_resumido = texto_resumido[:LIMITE_CHARS_PROMPT_FINAL]
+
+        prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
+            "{cub_contexto}", cub_ctx
+        )
+
+        logger.info("Enviando consolidacao final para o LLM...")
+        resposta = await chamar_llm(prompt_completo)
+
+        if not resposta:
+            logger.error("LLM nao disponivel")
+            logger.error("Instale: pip install anthropic openai claude-agent-sdk")
+            logger.error("Ou configure Claude CLI: npm install -g @anthropic-ai/claude-code")
+            sys.exit(1)
+
+        logger.info("Processando resposta JSON...")
+        try:
+            dados = parsear_json(resposta)
+        except json.JSONDecodeError as e:
+            os.makedirs(PASTA_SAIDA, exist_ok=True)
+            with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
+                f.write(resposta)
+            logger.error(
+                "Erro JSON: %s | Resposta salva em %s",
+                e,
+                caminho_saida(ARQ_RESPOSTA_BRUTA),
+            )
+            sys.exit(1)
+
+    _preencher_cub_automatico(dados, cub_info)
 
     os.makedirs(PASTA_SAIDA, exist_ok=True)
     with open(caminho_saida(ARQ_DADOS_JSON), "w", encoding="utf-8") as f:
@@ -277,6 +312,10 @@ async def executar_pipeline():
         logger.warning("Dados faltantes:")
         for item in falta:
             logger.warning("  - %s", item)
+
+    if _somente_json():
+        logger.info("Modo --json-only: planilha nao sera preenchida.")
+        return
 
     logger.info("Preenchendo planilha...")
     path_planilha_saida = caminho_saida(ARQ_PLANILHA_SAIDA)
