@@ -24,7 +24,7 @@ from .formatacao import formatar_brl
 from .llm import chamar_llm
 from .pdf_processing import (
     dividir_lotes_documentos,
-    extrair_texto_pdf,
+    iterar_texto_pdf_paginas,
     prefiltrar_texto,
     separar_documentos,
 )
@@ -39,15 +39,24 @@ __all__ = ["executar_pipeline"]
 def _extrair_evidencias_criticas(textos, limite_chars=12000):
     marcador_inicio = "EVIDENCIAS CRITICAS EXTRAIDAS DO TEXTO ORIGINAL:"
     marcador_fim = "\n\nTEXTO FILTRADO COMPLEMENTAR:"
-    inicio = textos.find(marcador_inicio)
-    if inicio < 0:
-        return ""
+    evidencias_partes = []
+    pos = 0
 
-    fim = textos.find(marcador_fim, inicio)
-    if fim < 0:
-        fim = len(textos)
+    while True:
+        inicio = textos.find(marcador_inicio, pos)
+        if inicio < 0:
+            break
+        fim = textos.find(marcador_fim, inicio)
+        if fim < 0:
+            fim = len(textos)
+        trecho = textos[inicio:fim].strip()
+        if trecho:
+            if evidencias_partes:
+                trecho = trecho.replace(marcador_inicio, "").strip()
+            evidencias_partes.append(trecho)
+        pos = fim
 
-    evidencias = textos[inicio:fim].strip()
+    evidencias = "\n".join(evidencias_partes).strip()
     if len(evidencias) <= limite_chars:
         return evidencias
 
@@ -55,6 +64,17 @@ def _extrair_evidencias_criticas(textos, limite_chars=12000):
     if corte < limite_chars * 0.7:
         corte = limite_chars
     return evidencias[:corte].rstrip()
+
+
+def _formatar_bloco_pagina(pdf, pagina, texto):
+    nome = os.path.basename(pdf)
+    return (
+        f"\n\n{'=' * 40}\n"
+        f"DOCUMENTO: {nome}\n"
+        f"PAGINA: {pagina}\n"
+        f"{'=' * 40}\n"
+        f"{texto.strip()}\n"
+    )
 
 
 async def _resumir_lotes_documentos(textos):
@@ -103,31 +123,60 @@ async def executar_pipeline():
         with open(path_textos_extraidos, encoding="utf-8") as f:
             textos = f.read()
         logger.info("Usando cache de texto: %s (%s chars)", path_textos_extraidos, len(textos))
-    else:
-        logger.info("%s PDF(s) | Extraindo texto (pdfplumber + OCR)...", len(pdfs))
-        textos = ""
-        for pdf in pdfs:
-            t = extrair_texto_pdf(pdf)
-            if t:
-                textos += (
-                    f"\n\n{'=' * 40}\nDOCUMENTO: {os.path.basename(pdf)}\n{'=' * 40}\n{t}"
-                )
+        logger.info("Aplicando pre-filtragem...")
+        textos = prefiltrar_texto(textos)
 
-        if not textos.strip():
+        with open(path_textos_filtrados, "w", encoding="utf-8") as f:
+            f.write(textos)
+        logger.info("Filtrado salvo em: %s", path_textos_filtrados)
+    else:
+        os.makedirs(PASTA_SAIDA, exist_ok=True)
+        logger.info(
+            "%s PDF(s) | Extraindo e filtrando em streaming (1 PDF, 1 pagina por vez)...",
+            len(pdfs),
+        )
+        total_bruto = 0
+        total_filtrado = 0
+        total_paginas = 0
+
+        with open(path_textos_extraidos, "w", encoding="utf-8") as bruto_f, open(
+            path_textos_filtrados, "w", encoding="utf-8"
+        ) as filtrado_f:
+            for pdf in pdfs:
+                logger.info("Processando PDF: %s", os.path.basename(pdf))
+                for pagina, texto_pagina in iterar_texto_pdf_paginas(pdf):
+                    bloco = _formatar_bloco_pagina(pdf, pagina, texto_pagina)
+                    bruto_f.write(bloco)
+                    bruto_f.flush()
+                    total_bruto += len(bloco)
+                    total_paginas += 1
+
+                    bloco_filtrado = prefiltrar_texto(bloco, verbose=False)
+                    if bloco_filtrado.strip():
+                        filtrado_f.write(bloco_filtrado)
+                        filtrado_f.write("\n\n")
+                        filtrado_f.flush()
+                        total_filtrado += len(bloco_filtrado)
+
+        if total_bruto <= 0:
             logger.error("Nenhum texto extraido dos PDFs")
             sys.exit(1)
 
-        os.makedirs(PASTA_SAIDA, exist_ok=True)
-        with open(path_textos_extraidos, "w", encoding="utf-8") as f:
-            f.write(textos)
-        logger.info("Total bruto: %s chars (salvo em %s)", len(textos), path_textos_extraidos)
+        with open(path_textos_filtrados, encoding="utf-8") as f:
+            textos = f.read()
+        if not textos.strip():
+            logger.error("Nenhum texto relevante apos filtragem")
+            sys.exit(1)
 
-    logger.info("Aplicando pre-filtragem...")
-    textos = prefiltrar_texto(textos)
+        logger.info(
+            "Extraidos %s pagina(s) | bruto=%s chars (%s) | filtrado=%s chars (%s)",
+            total_paginas,
+            total_bruto,
+            path_textos_extraidos,
+            total_filtrado,
+            path_textos_filtrados,
+        )
 
-    with open(path_textos_filtrados, "w", encoding="utf-8") as f:
-        f.write(textos)
-    logger.info("Filtrado salvo em: %s", path_textos_filtrados)
     logger.info("Total filtrado disponivel: %s chars", len(textos))
 
     cub_info = buscar_cub_sinduscon()

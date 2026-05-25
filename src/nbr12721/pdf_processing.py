@@ -1,11 +1,19 @@
 """Extracao e reducao textual de PDFs para o pipeline NBR 12721."""
+import gc
 import logging
 import os
 import sys
+import tempfile
 
 from .config import (
     LIMITE_CHARS_LOTE,
     LIMITE_CHARS_TEXTO_FILTRADO,
+    OCR_DPI,
+    OCR_GRAYSCALE,
+    OCR_MAX_IMAGE_PIXELS,
+    OCR_MIN_CHARS_PAGINA,
+    OCR_TIMEOUT_SEGUNDOS,
+    OCR_USAR_ARQUIVOS_TEMP,
     POPPLER_PATH,
     TESSERACT_CMD,
     TESSERACT_LANG,
@@ -15,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "extrair_texto_pdf",
+    "iterar_texto_pdf_paginas",
     "normalizar_ocr",
     "prefiltrar_texto",
     "separar_documentos",
@@ -22,55 +31,164 @@ __all__ = [
 ]
 
 
-def extrair_texto_pdf(caminho):
+def _resolver_poppler_path():
+    if POPPLER_PATH:
+        return POPPLER_PATH
+    if sys.platform == "win32":
+        for p in [r"C:\poppler\Library\bin", r"C:\poppler\bin",
+                  r"C:\Program Files\poppler\Library\bin",
+                  r"C:\Program Files\poppler\bin"]:
+            if os.path.exists(os.path.join(p, "pdftoppm.exe")):
+                return p
+    return None
+
+
+def _fechar_imagem(img):
+    try:
+        img.close()
+    except Exception:
+        pass
+
+
+def _ocr_pagina_com_arquivo_temp(convert_from_path, pytesseract, caminho, indice, poppler_path):
+    with tempfile.TemporaryDirectory(prefix="nbr12721_ocr_") as tmpdir:
+        caminhos = convert_from_path(
+            caminho,
+            dpi=OCR_DPI,
+            first_page=indice,
+            last_page=indice,
+            poppler_path=poppler_path,
+            thread_count=1,
+            fmt="jpeg",
+            output_folder=tmpdir,
+            paths_only=True,
+            grayscale=OCR_GRAYSCALE,
+            jpegopt={"quality": 85, "progressive": False, "optimize": True},
+        )
+        texto = ""
+        for caminho_img in caminhos:
+            texto += pytesseract.image_to_string(
+                caminho_img,
+                lang=TESSERACT_LANG,
+                timeout=OCR_TIMEOUT_SEGUNDOS,
+            ) + "\n"
+        return texto
+
+
+def _ocr_pagina_em_memoria(convert_from_path, pytesseract, caminho, indice, poppler_path):
+    imagens = []
+    try:
+        imagens = convert_from_path(
+            caminho,
+            dpi=OCR_DPI,
+            first_page=indice,
+            last_page=indice,
+            poppler_path=poppler_path,
+            thread_count=1,
+            grayscale=OCR_GRAYSCALE,
+        )
+        texto = ""
+        for img in imagens:
+            try:
+                texto += pytesseract.image_to_string(
+                    img,
+                    lang=TESSERACT_LANG,
+                    timeout=OCR_TIMEOUT_SEGUNDOS,
+                ) + "\n"
+            finally:
+                _fechar_imagem(img)
+        return texto
+    finally:
+        for img in imagens:
+            _fechar_imagem(img)
+        gc.collect()
+
+
+def iterar_texto_pdf_paginas(caminho):
+    """Extrai texto de um PDF pagina a pagina, usando OCR somente quando necessario."""
     nome = os.path.basename(caminho)
-    texto_nativo = ""
+    poppler_path = _resolver_poppler_path()
+
     try:
         import pdfplumber
-        with pdfplumber.open(caminho) as pdf:
-            for pg in pdf.pages:
-                texto_nativo += (pg.extract_text() or "") + "\n"
-    except: pass
+    except ImportError:
+        print("    (pdfplumber nao disponivel - instale as dependencias do requirements.txt)")
+        return
 
-    if len(texto_nativo.strip()) > 200:
-        print(f"  + {nome} - {len(texto_nativo)} chars (texto nativo)")
-        return texto_nativo
-
-    texto_ocr = ""
     try:
         import PIL.Image
-        PIL.Image.MAX_IMAGE_PIXELS = 200_000_000
+        PIL.Image.MAX_IMAGE_PIXELS = OCR_MAX_IMAGE_PIXELS
         from pdf2image import convert_from_path
         import pytesseract
 
         if TESSERACT_CMD:
             pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
-
-        poppler_path = None
-        if POPPLER_PATH:
-            poppler_path = POPPLER_PATH
-        elif sys.platform == "win32":
-            for p in [r"C:\poppler\Library\bin", r"C:\poppler\bin",
-                       r"C:\Program Files\poppler\Library\bin",
-                       r"C:\Program Files\poppler\bin"]:
-                if os.path.exists(os.path.join(p, "pdftoppm.exe")):
-                    poppler_path = p; break
-        images = convert_from_path(caminho, dpi=200, poppler_path=poppler_path)
-        for img in images:
-            texto_ocr += pytesseract.image_to_string(img, lang=TESSERACT_LANG) + "\n"
-        if texto_ocr.strip():
-            print(f"  + {nome} - {len(texto_ocr)} chars (OCR)")
-            return texto_ocr
+        ocr_disponivel = True
     except ImportError:
-        print(f"    (OCR nao disponivel - instale: pip install pytesseract pdf2image)")
-    except Exception as e:
-        print(f"    (OCR falhou: {e})")
+        convert_from_path = None
+        pytesseract = None
+        ocr_disponivel = False
 
-    if texto_nativo.strip():
-        print(f"  + {nome} - {len(texto_nativo)} chars (parcial)")
-        return texto_nativo
-    print(f"  x {nome} - sem texto")
-    return ""
+    try:
+        with pdfplumber.open(caminho) as pdf:
+            total_paginas = len(pdf.pages)
+            for indice, pagina in enumerate(pdf.pages, start=1):
+                texto_nativo = ""
+                try:
+                    texto_nativo = (pagina.extract_text() or "").strip()
+                except Exception as e:
+                    logger.warning("%s pagina %s: falha no texto nativo: %s", nome, indice, e)
+
+                if len(texto_nativo) >= OCR_MIN_CHARS_PAGINA:
+                    print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto_nativo)} chars (texto nativo)")
+                    yield indice, texto_nativo
+                    continue
+
+                if not ocr_disponivel:
+                    if texto_nativo:
+                        print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto_nativo)} chars (parcial)")
+                        yield indice, texto_nativo
+                    else:
+                        print(f"  x {nome} p.{indice}/{total_paginas} - sem texto")
+                    continue
+
+                texto_ocr = ""
+                try:
+                    if OCR_USAR_ARQUIVOS_TEMP:
+                        texto_ocr = _ocr_pagina_com_arquivo_temp(
+                            convert_from_path,
+                            pytesseract,
+                            caminho,
+                            indice,
+                            poppler_path,
+                        )
+                    else:
+                        texto_ocr = _ocr_pagina_em_memoria(
+                            convert_from_path,
+                            pytesseract,
+                            caminho,
+                            indice,
+                            poppler_path,
+                        )
+                except Exception as e:
+                    print(f"    ({nome} p.{indice}: OCR falhou: {e})")
+                finally:
+                    gc.collect()
+
+                texto = texto_ocr.strip() or texto_nativo
+                if texto.strip():
+                    origem = "OCR" if texto_ocr.strip() else "parcial"
+                    print(f"  + {nome} p.{indice}/{total_paginas} - {len(texto)} chars ({origem})")
+                    yield indice, texto
+                else:
+                    print(f"  x {nome} p.{indice}/{total_paginas} - sem texto")
+    except Exception as e:
+        print(f"    ({nome}: falha ao abrir PDF: {e})")
+
+
+def extrair_texto_pdf(caminho):
+    partes = [texto for _, texto in iterar_texto_pdf_paginas(caminho)]
+    return "\n".join(partes)
 
 
 def normalizar_ocr(texto):

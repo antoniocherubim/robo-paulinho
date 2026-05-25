@@ -45,6 +45,22 @@ class TestImports(unittest.TestCase):
         self.assertTrue(saida.endswith("data/output/saida"))
         self.assertTrue(planilha.endswith("assets/ABNT_NBR_12721-2006.xlsx"))
 
+    def test_config_ocr_padrao(self):
+        from nbr12721.config import (
+            OCR_DPI,
+            OCR_GRAYSCALE,
+            OCR_MAX_IMAGE_PIXELS,
+            OCR_MIN_CHARS_PAGINA,
+            OCR_TIMEOUT_SEGUNDOS,
+            OCR_USAR_ARQUIVOS_TEMP,
+        )
+        self.assertGreater(OCR_DPI, 0)
+        self.assertGreater(OCR_MIN_CHARS_PAGINA, 0)
+        self.assertGreater(OCR_TIMEOUT_SEGUNDOS, 0)
+        self.assertGreater(OCR_MAX_IMAGE_PIXELS, 0)
+        self.assertIsInstance(OCR_USAR_ARQUIVOS_TEMP, bool)
+        self.assertIsInstance(OCR_GRAYSCALE, bool)
+
 
 if __name__ == "__main__":
     unittest.main()

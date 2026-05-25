@@ -183,6 +183,12 @@ OPENAI_API_KEY=sk-...
 | `TESSERACT_CMD` | Caminho do executável do Tesseract; deixe vazio se `tesseract` estiver no `PATH` |
 | `TESSERACT_LANG` | Idiomas do OCR (default: `por+eng`) |
 | `POPPLER_PATH` | Pasta do Poppler/`pdftoppm`; útil no Windows quando não estiver no `PATH` |
+| `OCR_DPI` | Resolução usada ao rasterizar páginas para OCR (default: `150`; menor usa menos RAM) |
+| `OCR_MIN_CHARS_PAGINA` | Mínimo de caracteres nativos por página para pular OCR (default: `80`) |
+| `OCR_USAR_ARQUIVOS_TEMP` | Usa arquivos temporários no OCR em vez de manter imagens na RAM (default: `true`) |
+| `OCR_GRAYSCALE` | Rasteriza páginas em escala de cinza para reduzir memória (default: `true`) |
+| `OCR_TIMEOUT_SEGUNDOS` | Tempo máximo por página no Tesseract (default: `120`) |
+| `OCR_MAX_IMAGE_PIXELS` | Limite de pixels aceito pelo PIL no fallback em memória (default: `120000000`) |
 | `LIMITE_CHARS_TEXTO_FILTRADO` | Limite do texto enviado aos lotes da LLM apos filtro de OCR/PDF (default: `16000`) |
 | `CLAUDE_EXECUTABLE` | Caminho absoluto do `claude`, se não estiver no PATH |
 | `CLAUDE_EXTRA_PATHS` | Diretórios extras no PATH |
@@ -229,6 +235,12 @@ Exemplo de `.env`:
 ```env
 TESSERACT_CMD=
 TESSERACT_LANG=por+eng
+OCR_DPI=150
+OCR_MIN_CHARS_PAGINA=80
+OCR_USAR_ARQUIVOS_TEMP=true
+OCR_GRAYSCALE=true
+OCR_TIMEOUT_SEGUNDOS=120
+OCR_MAX_IMAGE_PIXELS=120000000
 LIMITE_CHARS_TEXTO_FILTRADO=16000
 POPPLER_PATH=
 ```
@@ -242,6 +254,12 @@ Exemplo Linux com path explicito:
 ```env
 TESSERACT_CMD=/usr/bin/tesseract
 TESSERACT_LANG=por+eng
+OCR_DPI=150
+OCR_MIN_CHARS_PAGINA=80
+OCR_USAR_ARQUIVOS_TEMP=true
+OCR_GRAYSCALE=true
+OCR_TIMEOUT_SEGUNDOS=120
+OCR_MAX_IMAGE_PIXELS=120000000
 LIMITE_CHARS_TEXTO_FILTRADO=16000
 POPPLER_PATH=
 ```
@@ -251,9 +269,20 @@ Exemplo Windows:
 ```env
 TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 TESSERACT_LANG=por+eng
+OCR_DPI=150
+OCR_MIN_CHARS_PAGINA=80
+OCR_USAR_ARQUIVOS_TEMP=true
+OCR_GRAYSCALE=true
+OCR_TIMEOUT_SEGUNDOS=120
+OCR_MAX_IMAGE_PIXELS=120000000
 LIMITE_CHARS_TEXTO_FILTRADO=16000
 POPPLER_PATH=C:\poppler\Library\bin
 ```
+
+Para reduzir uso de RAM no OCR, o pipeline processa 1 PDF por vez e 1 página por vez.
+Por padrão, cada página rasterizada vai para arquivo temporário e o Tesseract lê o caminho
+do arquivo, evitando manter a imagem dentro do processo Python. Se ainda ficar pesado,
+reduza `OCR_DPI` para `120`.
 
 ---
 

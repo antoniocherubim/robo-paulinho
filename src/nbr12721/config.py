@@ -48,6 +48,18 @@ def _resolver_int_env(nome: str, padrao: int) -> int:
     return valor if valor > 0 else padrao
 
 
+def _resolver_bool_env(nome: str, padrao: bool) -> bool:
+    bruto = os.environ.get(nome, "").strip().lower()
+    if not bruto:
+        return padrao
+    if bruto in {"1", "true", "t", "yes", "y", "sim", "s"}:
+        return True
+    if bruto in {"0", "false", "f", "no", "n", "nao", "não"}:
+        return False
+    logger.warning("%s invalido (%r), usando %s", nome, bruto, padrao)
+    return padrao
+
+
 # --- Diretorios e planilha modelo ---
 PASTA_DOCS = _resolver_path_env("PASTA_DOCS", "data/input/documentos")
 PASTA_SAIDA = _resolver_path_env("PASTA_SAIDA", "data/output/saida")
@@ -58,6 +70,12 @@ PASTA_LOGS = _resolver_path_env("PASTA_LOGS", "logs")
 TESSERACT_CMD = os.environ.get("TESSERACT_CMD", "").strip() or None
 TESSERACT_LANG = os.environ.get("TESSERACT_LANG", "").strip() or "por+eng"
 POPPLER_PATH = _resolver_path_env_opcional("POPPLER_PATH")
+OCR_DPI = _resolver_int_env("OCR_DPI", 150)
+OCR_MIN_CHARS_PAGINA = _resolver_int_env("OCR_MIN_CHARS_PAGINA", 80)
+OCR_USAR_ARQUIVOS_TEMP = _resolver_bool_env("OCR_USAR_ARQUIVOS_TEMP", True)
+OCR_GRAYSCALE = _resolver_bool_env("OCR_GRAYSCALE", True)
+OCR_TIMEOUT_SEGUNDOS = _resolver_int_env("OCR_TIMEOUT_SEGUNDOS", 120)
+OCR_MAX_IMAGE_PIXELS = _resolver_int_env("OCR_MAX_IMAGE_PIXELS", 120_000_000)
 
 # --- Artefatos de saida (basename) ---
 ARQ_PLANILHA_SAIDA = "NBR_12721_preenchida.xlsx"
