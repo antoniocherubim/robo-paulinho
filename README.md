@@ -17,6 +17,7 @@ paulo/
 ├── tasks/
 ├── logs/                  # arquivos .log (gerados em runtime)
 ├── .env.example
+├── main.py                # entrypoint simples para debug/execucao
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -33,13 +34,13 @@ paulo/
 ```bash
 pip install -r requirements.txt
 pip install -e .
-python3 -m nbr12721
+python3 main.py
 ```
 
 Reutilizar texto já extraído (pula leitura de PDFs):
 
 ```bash
-python3 -m nbr12721 --skip-extracao
+python3 main.py --skip-extracao
 ```
 
 Artefatos gerados em `data/output/saida/` (`NBR_12721_preenchida.xlsx`, `dados_extraidos.json`, etc.).
@@ -65,7 +66,19 @@ O arquivo usa rotação automática (5 MB, até 5 backups). Logs ficam em `logs/
 Alternativa sem `pip install -e .`:
 
 ```bash
-PYTHONPATH=src python3 -m nbr12721
+python3 main.py
+```
+
+Alternativa via pacote:
+
+```bash
+python3 -m nbr12721
+```
+
+Se o pacote estiver instalado com `pip install -e .`, tambem da para rodar:
+
+```bash
+nbr12721
 ```
 
 ### Migração do layout antigo
@@ -258,7 +271,8 @@ POPPLER_PATH=C:\poppler\Library\bin
 
 | Módulo | Responsabilidade |
 |--------|------------------|
-| `__main__.py` | Entrypoint (`python -m nbr12721`) |
+| `main.py` | Entrypoint do pacote (`main()` usado por debug e `python -m nbr12721`) |
+| `__main__.py` | Compatibilidade para `python -m nbr12721` |
 | `logging_setup.py` | Console + arquivo `logs/*.log` (rotação) |
 | `pipeline.py` | Orquestração do fluxo |
 | `config.py` | Paths, limites, resolvers de provider/modelo |

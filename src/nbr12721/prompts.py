@@ -17,31 +17,31 @@ DADOS CUB - SINDUSCON NORTE PR (use para preencher quadro3):
 {cub_contexto}
 
 Retorne EXCLUSIVAMENTE um JSON valido (sem markdown, sem ```), com esta estrutura:
-{{"incorporador":{{"nome":"","cnpj":"","endereco":""}},
-"responsavel":{{"nome":"","crea":"","art":"","endereco":""}},
-"projeto":{{"nomeEdificio":"","localConstrucao":"","cidadeUf":"",
-  "projetoPadrao":{{"R":false,"CS":false,"CL":false,"CG":false,"CP":false,"CP1Q":false}},
+{"incorporador":{"nome":"","cnpj":"","endereco":""},
+"responsavel":{"nome":"","crea":"","art":"","endereco":""},
+"projeto":{"nomeEdificio":"","localConstrucao":"","cidadeUf":"",
+  "projetoPadrao":{"R":false,"CS":false,"CL":false,"CG":false,"CP":false,"CP1Q":false},
   "qtdUnidades":0,"padraoAcabamento":"","numPavimentos":0,
-  "vagasUA":0,"vagasAcessorio":0,"vagasComum":0,"areaTerreno":0,"dataAprovacao":"","numAlvara":""}},
-"quadro1":{{"pavimentos":[{{"nome":"","areaPrivCobPadrao":0,"areaPrivCobDifReal":0,"areaPrivCobDifEquiv":0,
+  "vagasUA":0,"vagasAcessorio":0,"vagasComum":0,"areaTerreno":0,"dataAprovacao":"","numAlvara":""},
+"quadro1":{"pavimentos":[{"nome":"","areaPrivCobPadrao":0,"areaPrivCobDifReal":0,"areaPrivCobDifEquiv":0,
   "areaComumNPCobPadrao":0,"areaComumNPCobDifReal":0,"areaComumNPCobDifEquiv":0,
-  "areaComumPCobPadrao":0,"areaComumPCobDifReal":0,"areaComumPCobDifEquiv":0,"qtdPavimentos":1}}]}},
-"quadro2":{{"unidades":[{{"designacao":"","areaPrivCobPadrao":0,"areaPrivCobDifReal":0,"areaPrivCobDifEquiv":0,
+  "areaComumPCobPadrao":0,"areaComumPCobDifReal":0,"areaComumPCobDifEquiv":0,"qtdPavimentos":1}]},
+"quadro2":{"unidades":[{"designacao":"","areaPrivCobPadrao":0,"areaPrivCobDifReal":0,"areaPrivCobDifEquiv":0,
   "areaComumNPCobPadrao":0,"areaComumNPCobDifReal":0,"areaComumNPCobDifEquiv":0,
-  "qtdUnidades":1,"outrasAreasPriv":0,"areaTerrExcl":0,"areaTerrComum":0}}]}},
-"quadro3":{{"projetoPadrao":{{"designacao":"","padrao":"","numPav":"","areaEquiv":"","quartos":"","salas":"","banheiros":"","quartosEmp":""}},
+  "qtdUnidades":1,"outrasAreasPriv":0,"areaTerrExcl":0,"areaTerrComum":0}]},
+"quadro3":{"projetoPadrao":{"designacao":"","padrao":"","numPav":"","areaEquiv":"","quartos":"","salas":"","banheiros":"","quartosEmp":""},
   "sindicato":"","mesCub":"","valorCub":0,"percMateriais":0,"percMaoObra":0,
   "fundacoes":0,"elevadores":0,"fogoes":0,"aquecedores":0,"bombasRecalque":0,"incineracao":0,
   "arCondicionado":0,"calefacao":0,"ventilacao":0,"outros6_3":0,"playground":0,"urbanizacao":0,
   "recreacao":0,"ajardinamento":0,"instCondominio":0,"outros6_5":0,"outros6_6":0,
-  "impostos":0,"projArq":0,"projEstrut":0,"projInst":0,"projEsp":0,"percConstrutor":0,"percIncorporador":0}},
-"quadro4a":{{"unidadesSubrogadas":[]}},
-"quadro5":{{"tipoEdificacao":"","numPavimentos":"","unidadesPorPav":"","numeracao":"","pilotis":"",
-  "transicao":"","garagens":"","pavComunitarios":"","outrosPav":"","dataAprovacao":"","outrasIndicacoes":""}},
-"quadro6":{{"equipamentos":[{{"nome":"","tipo":"","acabamento":"","detalhes":""}}]}},
-"quadro7":{{"acabamentos":[{{"dependencia":"","pisos":"","paredes":"","tetos":"","outros":""}}]}},
-"quadro8":{{"acabamentos":[{{"dependencia":"","pisos":"","paredes":"","tetos":"","outros":""}}]}},
-"_dados_faltantes":["lista de dados nao encontrados"]}}
+  "impostos":0,"projArq":0,"projEstrut":0,"projInst":0,"projEsp":0,"percConstrutor":0,"percIncorporador":0},
+"quadro4a":{"unidadesSubrogadas":[]},
+"quadro5":{"tipoEdificacao":"","numPavimentos":"","unidadesPorPav":"","numeracao":"","pilotis":"",
+  "transicao":"","garagens":"","pavComunitarios":"","outrosPav":"","dataAprovacao":"","outrasIndicacoes":""},
+"quadro6":{"equipamentos":[{"nome":"","tipo":"","acabamento":"","detalhes":""}]},
+"quadro7":{"acabamentos":[{"dependencia":"","pisos":"","paredes":"","tetos":"","outros":""}]},
+"quadro8":{"acabamentos":[{"dependencia":"","pisos":"","paredes":"","tetos":"","outros":""}]},
+"_dados_faltantes":["lista de dados nao encontrados"]}
 
 REGRAS: Quadro I = pavimentos (qtdPavimentos para repetidos). Quadro II = unidades (qtdUnidades para repetidas).
 Quadro VII = acabamentos privativos. Quadro VIII = acabamentos areas comuns.
@@ -54,8 +54,8 @@ Lote:
 {textos}
 
 Retorne EXCLUSIVAMENTE um JSON valido (sem markdown) com esta estrutura:
-{{
-  "resumo": {{
+{
+  "resumo": {
     "identificacao": [],
     "responsaveis": [],
     "projeto": [],
@@ -65,10 +65,10 @@ Retorne EXCLUSIVAMENTE um JSON valido (sem markdown) com esta estrutura:
     "quadro6": [],
     "quadro7": [],
     "quadro8": []
-  }},
+  },
   "dados_numericos": [],
   "pendencias": []
-}}
+}
 
 Regras:
 - Cada item das listas deve ser curto, objetivo e autocontido.

@@ -36,6 +36,27 @@ logger = logging.getLogger(__name__)
 __all__ = ["executar_pipeline"]
 
 
+def _extrair_evidencias_criticas(textos, limite_chars=12000):
+    marcador_inicio = "EVIDENCIAS CRITICAS EXTRAIDAS DO TEXTO ORIGINAL:"
+    marcador_fim = "\n\nTEXTO FILTRADO COMPLEMENTAR:"
+    inicio = textos.find(marcador_inicio)
+    if inicio < 0:
+        return ""
+
+    fim = textos.find(marcador_fim, inicio)
+    if fim < 0:
+        fim = len(textos)
+
+    evidencias = textos[inicio:fim].strip()
+    if len(evidencias) <= limite_chars:
+        return evidencias
+
+    corte = evidencias.rfind("\n", 0, limite_chars)
+    if corte < limite_chars * 0.7:
+        corte = limite_chars
+    return evidencias[:corte].rstrip()
+
+
 async def _resumir_lotes_documentos(textos):
     documentos = separar_documentos(textos)
     lotes = dividir_lotes_documentos(documentos)
@@ -114,6 +135,12 @@ async def executar_pipeline():
 
     resumos_lotes = await _resumir_lotes_documentos(textos)
     texto_resumido = compactar_resumos(resumos_lotes)
+    evidencias_criticas = _extrair_evidencias_criticas(textos)
+    if evidencias_criticas:
+        texto_resumido = (
+            f"{evidencias_criticas}\n\n"
+            f"RESUMO CONSOLIDADO DOS LOTES:\n{texto_resumido}"
+        )
     with open(caminho_saida(ARQ_RESUMOS_LOTES), "w", encoding="utf-8") as f:
         f.write(texto_resumido)
     logger.info("Resumo consolidado: %s chars", len(texto_resumido))

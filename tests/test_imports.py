@@ -14,6 +14,7 @@ class TestImports(unittest.TestCase):
             "nbr12721.serialization",
             "nbr12721.excel_writer",
             "nbr12721.pipeline",
+            "nbr12721.main",
             "nbr12721",
         ]
         for nome in modulos:
