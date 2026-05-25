@@ -46,6 +46,37 @@ _PALAVRAS_PADRAO_R = re.compile(
     r"(?:multifamiliar|vertical|\[rmv\]).*residencial",
     re.IGNORECASE,
 )
+_RE_AREA_X_APTOS = re.compile(
+    r"(?P<area>[\d.,]+)\s*[xX×]\s*(?P<qtd>\d+)\s*(?:APTOS?|APARTAMENTOS?)\b",
+    re.IGNORECASE,
+)
+_RE_QTD_APTOS = re.compile(
+    r"(?<![\d.,])\b(?P<qtd>\d+)\s*(?:APTOS?|APARTAMENTOS?)(?!/\s*PAV)\b",
+    re.IGNORECASE,
+)
+_RE_INTERVALO_PAV = re.compile(
+    r"\b(\d+)\s*(?:º|°)?\s*AO\s*(\d+)\s*(?:º|°)?\b",
+    re.IGNORECASE,
+)
+_RE_N_PAVIMENTOS = re.compile(r"\b(\d+)\s+PAVIMENTOS?\b", re.IGNORECASE)
+_RE_TERREO = re.compile(
+    r"PAVIMENTO\s+T[EÉ]RREO|\bT[EÉ]RREO\b",
+    re.IGNORECASE,
+)
+_RE_COBERTURA = re.compile(r"\bCOBERTURA\b", re.IGNORECASE)
+_RE_VAGAS_COMUNS = re.compile(
+    r"TOTAL\s+DE\s+VAGAS\s+COMUNS?\s*:?\s*(\d+)",
+    re.IGNORECASE,
+)
+_RE_VAGAS_DUPLAS = re.compile(
+    r"TOTAL\s+DE\s+VAGAS\s+DUPLAS?\s*:?\s*(\d+)",
+    re.IGNORECASE,
+)
+_RE_APTOS_POR_PAV = re.compile(
+    r"\b(\d+)\s*APTOS?\s*/\s*PAV\b",
+    re.IGNORECASE,
+)
+
 
 def _esqueleto_vazio() -> dict:
     """Retorna dict novo com o schema completo e defaults do PROMPT_EXTRAIR."""
@@ -427,6 +458,149 @@ def _texto_menciona_crea(texto: str) -> bool:
     return bool(re.search(r"CREA", texto, re.IGNORECASE))
 
 
+def _normalizar_linha_ocr(linha: str) -> str:
+    return re.sub(r"\s+", " ", linha.strip())
+
+
+def _formatar_area_designacao(area: float) -> str:
+    texto = f"{area:.4f}".rstrip("0").rstrip(".")
+    return texto.replace(".", ",")
+
+
+def _item_unidade_quadro2(area: float, qtd: int) -> dict:
+    designacao = ""
+    if area > 0:
+        designacao = f"Apartamento tipo {_formatar_area_designacao(area)} m²"
+    return {
+        "designacao": designacao,
+        "areaPrivCobPadrao": area,
+        "areaPrivCobDifReal": 0,
+        "areaPrivCobDifEquiv": 0,
+        "areaComumNPCobPadrao": 0,
+        "areaComumNPCobDifReal": 0,
+        "areaComumNPCobDifEquiv": 0,
+        "qtdUnidades": qtd,
+        "outrasAreasPriv": 0,
+        "areaTerrExcl": 0,
+        "areaTerrComum": 0,
+    }
+
+
+def _coletar_unidades(texto: str) -> list[tuple[float, int]]:
+    """Coleta pares (area, qtd) deduplicados; area 0 para APTOS sem metragem."""
+    vistos: dict[tuple[float, int], None] = {}
+    linhas_vistas: set[str] = set()
+
+    for linha_raw in texto.splitlines():
+        linha = _normalizar_linha_ocr(linha_raw)
+        if not linha or linha in linhas_vistas:
+            continue
+        linhas_vistas.add(linha)
+
+        teve_area_x = False
+        for m in _RE_AREA_X_APTOS.finditer(linha):
+            teve_area_x = True
+            area = round(_parse_numero_br(m.group("area")), 3)
+            qtd = int(m.group("qtd"))
+            if qtd > 0:
+                vistos[(area, qtd)] = None
+
+        if not teve_area_x and not _RE_APTOS_POR_PAV.search(linha):
+            for m in _RE_QTD_APTOS.finditer(linha):
+                qtd = int(m.group("qtd"))
+                if qtd > 0:
+                    vistos[(0.0, qtd)] = None
+
+    pares = list(vistos.keys())
+    qtds_com_area = {q for a, q in pares if a > 0}
+    if qtds_com_area:
+        pares = [(a, q) for a, q in pares if a > 0 or q not in qtds_com_area]
+    return sorted(pares, key=lambda par: (par[0], par[1]))
+
+
+def _extrair_unidades_quadro2(texto: str) -> list[dict]:
+    pares_com_area = [(a, q) for a, q in _coletar_unidades(texto) if a > 0]
+    if not pares_com_area:
+        return [_item_unidade_quadro2(0, 1)]
+    return [_item_unidade_quadro2(area, qtd) for area, qtd in pares_com_area]
+
+
+def _extrair_qtd_unidades(texto: str) -> int:
+    return sum(qtd for _, qtd in _coletar_unidades(texto))
+
+
+def _extrair_num_pavimentos(texto: str) -> int:
+    base = 0
+    m_intervalo = _RE_INTERVALO_PAV.search(texto)
+    if m_intervalo:
+        base = max(int(m_intervalo.group(1)), int(m_intervalo.group(2)))
+    else:
+        m_total = _RE_N_PAVIMENTOS.search(texto)
+        if m_total:
+            base = int(m_total.group(1))
+
+    if base == 0:
+        return 0
+
+    extra = 0
+    if _RE_TERREO.search(texto):
+        extra += 1
+    if _RE_COBERTURA.search(texto):
+        extra += 1
+    return base + extra
+
+
+def _extrair_vagas_comuns(texto: str) -> int:
+    valores = [int(v) for v in _RE_VAGAS_COMUNS.findall(texto)]
+    return max(valores) if valores else 0
+
+
+def _extrair_vagas_duplas(texto: str) -> int:
+    valores = [int(v) for v in _RE_VAGAS_DUPLAS.findall(texto)]
+    return max(valores) if valores else 0
+
+
+def _preencher_quadro5(dados: dict, texto: str) -> None:
+    q5 = dados["quadro5"]
+    proj = dados["projeto"]
+    designacao = dados["quadro3"]["projetoPadrao"]["designacao"]
+
+    q5["tipoEdificacao"] = designacao
+    q5["dataAprovacao"] = proj["dataAprovacao"]
+    q5["numPavimentos"] = (
+        str(proj["numPavimentos"]) if proj["numPavimentos"] > 0 else ""
+    )
+
+    m_pav = _RE_APTOS_POR_PAV.search(texto)
+    q5["unidadesPorPav"] = f"{m_pav.group(1)} APTOS/PAV" if m_pav else ""
+
+    partes_garagem: list[str] = []
+    if proj["vagasComum"] > 0:
+        partes_garagem.append(f"{proj['vagasComum']} vagas comuns")
+    if proj["vagasAcessorio"] > 0:
+        partes_garagem.append(f"{proj['vagasAcessorio']} vagas duplas")
+    q5["garagens"] = "; ".join(partes_garagem)
+
+
+def _texto_menciona_vagas_comuns(texto: str) -> bool:
+    return bool(re.search(r"VAGAS\s+COMUNS?", texto, re.IGNORECASE))
+
+
+def _texto_menciona_vagas_duplas(texto: str) -> bool:
+    return bool(re.search(r"VAGAS\s+DUPLAS?", texto, re.IGNORECASE))
+
+
+def _texto_menciona_aptos(texto: str) -> bool:
+    return bool(re.search(r"APTOS?|APARTAMENTOS?", texto, re.IGNORECASE))
+
+
+def _quadro2_apenas_template(unidades: list[dict]) -> bool:
+    if len(unidades) != 1:
+        return False
+    u = unidades[0]
+    return not u.get("designacao") and u.get("areaPrivCobPadrao", 0) == 0
+
+
 def _computar_dados_faltantes(dados: dict, texto: str) -> list[str]:
     faltantes: list[str] = []
     inc = dados["incorporador"]
@@ -450,6 +624,18 @@ def _computar_dados_faltantes(dados: dict, texto: str) -> list[str]:
         faltantes.append("quadro3.projetoPadrao.designacao")
     if _texto_menciona_crea(texto) and not resp.get("crea"):
         faltantes.append("responsavel.crea")
+    if not proj.get("qtdUnidades"):
+        faltantes.append("projeto.qtdUnidades")
+    if not proj.get("numPavimentos"):
+        faltantes.append("projeto.numPavimentos")
+    if not proj.get("vagasComum") and _texto_menciona_vagas_comuns(texto):
+        faltantes.append("projeto.vagasComum")
+    if not proj.get("vagasAcessorio") and _texto_menciona_vagas_duplas(texto):
+        faltantes.append("projeto.vagasAcessorio")
+    if _quadro2_apenas_template(dados["quadro2"]["unidades"]) and _texto_menciona_aptos(
+        texto
+    ):
+        faltantes.append("quadro2.unidades")
 
     return faltantes
 
@@ -469,6 +655,14 @@ def extrair_dados_deterministico(texto: str) -> dict:
     dados["quadro3"]["projetoPadrao"]["designacao"] = designacao
 
     dados["responsavel"]["crea"] = _extrair_crea(texto)
+
+    dados["quadro2"]["unidades"] = _extrair_unidades_quadro2(texto)
+    dados["projeto"]["qtdUnidades"] = _extrair_qtd_unidades(texto)
+    dados["projeto"]["numPavimentos"] = _extrair_num_pavimentos(texto)
+    dados["projeto"]["vagasComum"] = _extrair_vagas_comuns(texto)
+    dados["projeto"]["vagasAcessorio"] = _extrair_vagas_duplas(texto)
+
+    _preencher_quadro5(dados, texto)
     dados["_dados_faltantes"] = _computar_dados_faltantes(dados, texto)
 
     return dados

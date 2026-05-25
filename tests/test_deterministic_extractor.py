@@ -33,7 +33,8 @@ class TestDeterministicExtractor(unittest.TestCase):
             "EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]",
         )
         self.assertEqual(dados["responsavel"]["crea"], "PR-27711/D")
-        self.assertEqual(dados["_dados_faltantes"], [])
+        self.assertIn("projeto.qtdUnidades", dados["_dados_faltantes"])
+        self.assertIn("projeto.numPavimentos", dados["_dados_faltantes"])
 
     def test_normaliza_cnpj_sem_barra(self):
         self.assertEqual(
@@ -105,6 +106,96 @@ Nº de ALVARÁ: 2457/2023
 """
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["projeto"]["dataAprovacao"], "24/07/2023")
+
+    def test_extrai_qtd_unidades_por_areas(self):
+        texto = """
+(1º AO 20º) PAV. TIPO - 66,02 X 160 APTOS
+(1º AO 20º) PAV. TIPO - 65,985 X 80 APTOS
+(1º AO 20º) PAV. TIPO - 55,00 X 80 APTOS
+"""
+        dados = extrair_dados_deterministico(texto)
+        unidades = dados["quadro2"]["unidades"]
+
+        self.assertEqual(dados["projeto"]["qtdUnidades"], 320)
+        self.assertEqual(len(unidades), 3)
+        self.assertAlmostEqual(unidades[0]["areaPrivCobPadrao"], 55.0)
+        self.assertAlmostEqual(unidades[1]["areaPrivCobPadrao"], 65.985)
+        self.assertAlmostEqual(unidades[2]["areaPrivCobPadrao"], 66.02)
+        self.assertEqual(unidades[0]["qtdUnidades"], 80)
+        self.assertEqual(unidades[1]["qtdUnidades"], 80)
+        self.assertEqual(unidades[2]["qtdUnidades"], 160)
+
+    def test_nao_duplica_unidade_repetida_por_ocr(self):
+        linha = "(1º AO 20º) PAV. TIPO - 66,02 X 160 APTOS"
+        texto = f"{linha}\n{linha}"
+        dados = extrair_dados_deterministico(texto)
+
+        self.assertEqual(dados["projeto"]["qtdUnidades"], 160)
+        self.assertEqual(len(dados["quadro2"]["unidades"]), 1)
+
+    def test_extrai_qtd_unidades_sem_area(self):
+        dados = extrair_dados_deterministico("160 APTOS")
+        self.assertEqual(dados["projeto"]["qtdUnidades"], 160)
+        self.assertEqual(dados["quadro2"]["unidades"][0]["designacao"], "")
+
+    def test_aptos_por_pav_nao_conta_como_qtd_total(self):
+        dados = extrair_dados_deterministico("6 APTOS/PAV")
+        self.assertEqual(dados["projeto"]["qtdUnidades"], 0)
+        self.assertEqual(dados["quadro5"]["unidadesPorPav"], "6 APTOS/PAV")
+
+    def test_qtd_sem_area_nao_duplica_qtd_com_area(self):
+        texto = "66,02 X 160 APTOS\n160 APTOS"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["qtdUnidades"], 160)
+
+    def test_extrai_num_pavimentos_com_terreo_e_cobertura(self):
+        texto = """
+PAVIMENTO TÉRREO
+(1º AO 20º) PAV. TIPO
+COBERTURA
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["numPavimentos"], 22)
+        self.assertEqual(dados["quadro5"]["numPavimentos"], "22")
+
+    def test_extrai_vagas_comuns_e_duplas_maior_valor(self):
+        texto = """
+TOTAL DE VAGAS COMUNS: 50 VAGAS
+TOTAL DE VAGAS COMUNS: 55 VAGAS
+TOTAL DE VAGAS DUPLAS: 21 VAGAS
+TOTAL DE VAGAS DUPLAS: 13 VAGAS
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["vagasComum"], 55)
+        self.assertEqual(dados["projeto"]["vagasAcessorio"], 21)
+        self.assertEqual(
+            dados["quadro5"]["garagens"],
+            "55 vagas comuns; 21 vagas duplas",
+        )
+
+    def test_quadro5_copia_dados_basicos(self):
+        texto = """
+EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]
+24/07/2023
+PAVIMENTO TÉRREO
+(1º AO 20º) PAV. TIPO
+COBERTURA
+TOTAL DE VAGAS COMUNS: 55 VAGAS
+TOTAL DE VAGAS DUPLAS: 21 VAGAS
+6 APTOS/PAV
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["quadro5"]["tipoEdificacao"],
+            "EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]",
+        )
+        self.assertEqual(dados["quadro5"]["dataAprovacao"], "24/07/2023")
+        self.assertEqual(dados["quadro5"]["numPavimentos"], "22")
+        self.assertEqual(
+            dados["quadro5"]["garagens"],
+            "55 vagas comuns; 21 vagas duplas",
+        )
+        self.assertEqual(dados["quadro5"]["unidadesPorPav"], "6 APTOS/PAV")
 
 
 if __name__ == "__main__":
