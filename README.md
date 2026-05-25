@@ -58,7 +58,7 @@ O pipeline grava logs estruturados em **console e arquivo**:
 Exemplo de linha no arquivo:
 
 ```
-2026-05-20 14:30:01 | INFO     | nbr12721.pipeline | 3 PDF(s) | Extraindo texto...
+2026-05-20 14:30:01 | INFO     | nbr12721.orchestration.pipeline | 3 PDF(s) | Extraindo texto...
 ```
 
 O arquivo usa rotação automática (5 MB, até 5 backups). Logs ficam em `logs/` (ignorados pelo git, exceto `.gitkeep`).

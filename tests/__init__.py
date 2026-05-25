@@ -12,7 +12,7 @@ _LOG_DIR = tempfile.mkdtemp(prefix="nbr12721-test-logs-")
 os.environ.setdefault("PASTA_LOGS", _LOG_DIR)
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 
-from nbr12721.logging_setup import configurar_logging, reset_logging
+from nbr12721.settings.logging_setup import configurar_logging, reset_logging
 
 reset_logging()
 configurar_logging()

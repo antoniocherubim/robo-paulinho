@@ -1,0 +1,82 @@
+"""Orquestrador do extrator deterministico NBR 12721."""
+
+from __future__ import annotations
+
+from .base_fields import (
+    _detectar_padrao_r,
+    _extrair_area_terreno,
+    _extrair_cidade_uf,
+    _extrair_cnpj,
+    _extrair_crea,
+    _extrair_data_aprovacao,
+    _extrair_designacao,
+    _extrair_num_alvara,
+    _normalizar_cnpj,
+    _normalizar_crea,
+)
+from .floors import _extrair_pavimentos_quadro1
+from .identity import (
+    _extrair_incorporador_nome,
+    _extrair_local_construcao,
+    _extrair_nome_edificio,
+    _extrair_responsavel_endereco,
+    _extrair_responsavel_nome,
+)
+from .missing import _computar_dados_faltantes
+from .quadro5 import _preencher_quadro5
+from .schema import _esqueleto_vazio
+from .units import (
+    _extrair_num_pavimentos,
+    _extrair_qtd_unidades,
+    _extrair_unidades_quadro2,
+    _extrair_vagas_comuns,
+    _extrair_vagas_duplas,
+)
+
+__all__ = ["extrair_dados_deterministico"]
+
+
+def _preencher_campos_base(dados: dict, texto: str) -> str:
+    dados["incorporador"]["cnpj"] = _extrair_cnpj(texto)
+    dados["projeto"]["cidadeUf"] = _extrair_cidade_uf(texto)
+    dados["projeto"]["dataAprovacao"] = _extrair_data_aprovacao(texto)
+    dados["projeto"]["numAlvara"] = _extrair_num_alvara(texto)
+    dados["projeto"]["areaTerreno"] = _extrair_area_terreno(texto)
+    dados["projeto"]["projetoPadrao"]["R"] = _detectar_padrao_r(texto)
+    designacao = _extrair_designacao(texto)
+    dados["quadro3"]["projetoPadrao"]["designacao"] = designacao
+    return designacao
+
+
+def _preencher_unidades_pavimentos_vagas(dados: dict, texto: str) -> None:
+    dados["quadro2"]["unidades"] = _extrair_unidades_quadro2(texto)
+    dados["projeto"]["qtdUnidades"] = _extrair_qtd_unidades(texto)
+    dados["projeto"]["numPavimentos"] = _extrair_num_pavimentos(texto)
+    dados["projeto"]["vagasComum"] = _extrair_vagas_comuns(texto)
+    dados["projeto"]["vagasAcessorio"] = _extrair_vagas_duplas(texto)
+    dados["quadro1"]["pavimentos"] = _extrair_pavimentos_quadro1(texto)
+
+
+def _preencher_identificacao(dados: dict, texto: str, designacao: str) -> None:
+    dados["projeto"]["localConstrucao"] = _extrair_local_construcao(texto)
+    dados["responsavel"]["crea"] = _extrair_crea(texto)
+    dados["responsavel"]["nome"] = _extrair_responsavel_nome(
+        texto,
+        dados["responsavel"]["crea"],
+    )
+    dados["responsavel"]["endereco"] = _extrair_responsavel_endereco(texto)
+    dados["incorporador"]["nome"] = _extrair_incorporador_nome(texto)
+    dados["projeto"]["nomeEdificio"] = _extrair_nome_edificio(texto, designacao)
+
+
+def extrair_dados_deterministico(texto: str) -> dict:
+    """Extrai campos do texto e retorna dict no schema de dados_extraidos.json."""
+    dados = _esqueleto_vazio()
+
+    designacao = _preencher_campos_base(dados, texto)
+    _preencher_unidades_pavimentos_vagas(dados, texto)
+    _preencher_identificacao(dados, texto, designacao)
+    _preencher_quadro5(dados, texto)
+    dados["_dados_faltantes"] = _computar_dados_faltantes(dados, texto)
+
+    return dados

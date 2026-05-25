@@ -1,6 +1,6 @@
 import unittest
 
-from nbr12721.llm import (
+from nbr12721.integrations.llm import (
     _normalizar_texto_resposta,
     _classificar_erro,
     _texto_de_resposta_anthropic_api,

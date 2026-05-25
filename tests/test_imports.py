@@ -5,16 +5,28 @@ import unittest
 class TestImports(unittest.TestCase):
     def test_todos_os_modulos_importam(self):
         modulos = [
-            "nbr12721.config",
-            "nbr12721.prompts",
-            "nbr12721.formatacao",
-            "nbr12721.llm",
-            "nbr12721.cub",
-            "nbr12721.pdf_processing",
-            "nbr12721.serialization",
-            "nbr12721.excel_writer",
-            "nbr12721.pipeline",
-            "nbr12721.validation",
+            "nbr12721.documents",
+            "nbr12721.documents.pdf_processing",
+            "nbr12721.extraction",
+            "nbr12721.extraction.deterministic_extraction",
+            "nbr12721.extraction.deterministic_extraction.extractor",
+            "nbr12721.extraction.prompts",
+            "nbr12721.extraction.serialization",
+            "nbr12721.extraction.validation",
+            "nbr12721.integrations",
+            "nbr12721.integrations.cub",
+            "nbr12721.integrations.llm",
+            "nbr12721.orchestration",
+            "nbr12721.orchestration.pipeline",
+            "nbr12721.orchestration.pipeline_llm",
+            "nbr12721.orchestration.pipeline_modes",
+            "nbr12721.orchestration.pipeline_postprocess",
+            "nbr12721.outputs",
+            "nbr12721.outputs.excel_writer",
+            "nbr12721.outputs.formatacao",
+            "nbr12721.settings",
+            "nbr12721.settings.config",
+            "nbr12721.settings.logging_setup",
             "nbr12721.main",
             "nbr12721",
         ]
@@ -23,18 +35,18 @@ class TestImports(unittest.TestCase):
                 __import__(nome)
 
     def test_validation_exporta_validar(self):
-        from nbr12721 import validation
+        from nbr12721.extraction import validation
 
         self.assertEqual(validation.__all__, ["validar_dados_extraidos"])
         self.assertTrue(callable(validation.validar_dados_extraidos))
 
     def test_llm_exporta_chamar_llm(self):
-        from nbr12721 import llm
+        from nbr12721.integrations import llm
         self.assertIn("chamar_llm", llm.__all__)
         self.assertTrue(inspect.iscoroutinefunction(llm.chamar_llm))
 
     def test_config_exporta_resolvers_llm(self):
-        from nbr12721 import config
+        from nbr12721.settings import config
         for nome in (
             "resolver_llm_provider",
             "resolver_llm_auto_primary",
@@ -44,7 +56,7 @@ class TestImports(unittest.TestCase):
                 self.assertTrue(callable(getattr(config, nome)))
 
     def test_config_paths_padrao(self):
-        from nbr12721.config import PASTA_DOCS, PASTA_SAIDA, PLANILHA
+        from nbr12721.settings.config import PASTA_DOCS, PASTA_SAIDA, PLANILHA
         docs = PASTA_DOCS.replace("\\", "/")
         saida = PASTA_SAIDA.replace("\\", "/")
         planilha = PLANILHA.replace("\\", "/")
@@ -53,7 +65,7 @@ class TestImports(unittest.TestCase):
         self.assertTrue(planilha.endswith("assets/ABNT_NBR_12721-2006.xlsx"))
 
     def test_config_ocr_padrao(self):
-        from nbr12721.config import (
+        from nbr12721.settings.config import (
             OCR_DPI,
             OCR_GRAYSCALE,
             OCR_MAX_IMAGE_PIXELS,

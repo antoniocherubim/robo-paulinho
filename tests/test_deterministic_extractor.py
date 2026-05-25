@@ -1,6 +1,6 @@
 import unittest
 
-from nbr12721.deterministic_extractor import (
+from nbr12721.extraction.deterministic_extraction.extractor import (
     _esqueleto_vazio,
     _normalizar_cnpj,
     _normalizar_crea,
@@ -49,7 +49,7 @@ class TestDeterministicExtractor(unittest.TestCase):
         self.assertEqual(_normalizar_crea("CREA PR-27711/D"), "PR-27711/D")
 
     def test_import_sem_efeitos_colaterais(self):
-        import nbr12721.deterministic_extractor as mod
+        import nbr12721.extraction.deterministic_extraction.extractor as mod
 
         self.assertEqual(mod.__all__, ["extrair_dados_deterministico"])
         vazio = extrair_dados_deterministico("")

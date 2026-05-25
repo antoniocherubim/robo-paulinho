@@ -4,7 +4,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-RAIZ_PROJETO = Path(__file__).resolve().parents[2]
+RAIZ_PROJETO = Path(__file__).resolve().parents[3]
 _CONFIGURADO = False
 
 

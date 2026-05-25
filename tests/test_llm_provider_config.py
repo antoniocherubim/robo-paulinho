@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from nbr12721.config import (
+from nbr12721.settings.config import (
     resolver_llm_provider,
     resolver_llm_auto_primary,
     resolver_openai_model,

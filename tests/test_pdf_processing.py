@@ -1,6 +1,6 @@
 import unittest
 
-from nbr12721.pdf_processing import prefiltrar_texto
+from nbr12721.documents.pdf_processing import prefiltrar_texto
 
 
 class TestPrefiltrarTexto(unittest.TestCase):

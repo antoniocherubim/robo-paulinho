@@ -4,12 +4,12 @@ import logging
 import re
 import urllib.request
 
-from .config import (
+from ..settings.config import (
     TIMEOUT_HTTP_SCRAPE,
     TIMEOUT_HTTP_DOWNLOAD,
     LIMITE_CHARS_CUB_TEXTO_COMPLETO,
 )
-from .formatacao import formatar_brl
+from ..outputs.formatacao import formatar_brl
 
 logger = logging.getLogger(__name__)
 

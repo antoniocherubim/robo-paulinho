@@ -1,6 +1,6 @@
 import unittest
 
-from nbr12721.validation import validar_dados_extraidos
+from nbr12721.extraction.validation import validar_dados_extraidos
 
 
 def _dados_minimos_completos() -> dict:

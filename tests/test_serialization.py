@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from nbr12721.serialization import parsear_json, compactar_resumos
+from nbr12721.extraction.serialization import compactar_resumos, parsear_json
 
 
 class TestParsearJson(unittest.TestCase):

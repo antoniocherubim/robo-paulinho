@@ -14,7 +14,7 @@ class TestChamarOpenaiApi(unittest.IsolatedAsyncioTestCase):
     async def test_sem_api_key_retorna_none(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             os.environ.pop("OPENAI_API_KEY", None)
-            from nbr12721.llm import chamar_openai_api
+            from nbr12721.integrations.llm import chamar_openai_api
             self.assertIsNone(await chamar_openai_api("prompt"))
 
     async def test_resposta_mock_retorna_texto(self):
@@ -31,9 +31,9 @@ class TestChamarOpenaiApi(unittest.IsolatedAsyncioTestCase):
         mock_cliente.chat.completions.create.return_value = Resp()
 
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
-            with mock.patch("nbr12721.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
+            with mock.patch("nbr12721.integrations.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
                 with _patch_openai_client(mock_cliente):
-                    from nbr12721.llm import chamar_openai_api
+                    from nbr12721.integrations.llm import chamar_openai_api
                     resultado = await chamar_openai_api("prompt")
         self.assertEqual(resultado, '{"ok": true}')
 
@@ -42,9 +42,9 @@ class TestChamarOpenaiApi(unittest.IsolatedAsyncioTestCase):
         mock_cliente.chat.completions.create.side_effect = Exception("401 invalid_api_key")
 
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
-            with mock.patch("nbr12721.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
+            with mock.patch("nbr12721.integrations.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
                 with _patch_openai_client(mock_cliente):
-                    from nbr12721.llm import chamar_openai_api
+                    from nbr12721.integrations.llm import chamar_openai_api
                     resultado = await chamar_openai_api("prompt")
         self.assertIsNone(resultado)
         self.assertEqual(mock_cliente.chat.completions.create.call_count, 1)
@@ -54,11 +54,11 @@ class TestChamarOpenaiApi(unittest.IsolatedAsyncioTestCase):
         mock_cliente.chat.completions.create.side_effect = Exception("429 rate limit")
 
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
-            with mock.patch("nbr12721.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
+            with mock.patch("nbr12721.integrations.llm.asyncio.to_thread", side_effect=lambda fn: fn()):
                 with _patch_openai_client(mock_cliente):
-                    with mock.patch("nbr12721.llm.time.sleep"):
-                        with mock.patch("nbr12721.llm.API_MAX_TENTATIVAS", 3):
-                            from nbr12721.llm import chamar_openai_api
+                    with mock.patch("nbr12721.integrations.llm.time.sleep"):
+                        with mock.patch("nbr12721.integrations.llm.API_MAX_TENTATIVAS", 3):
+                            from nbr12721.integrations.llm import chamar_openai_api
                             resultado = await chamar_openai_api("prompt")
         self.assertIsNone(resultado)
         self.assertEqual(mock_cliente.chat.completions.create.call_count, 3)
@@ -66,7 +66,7 @@ class TestChamarOpenaiApi(unittest.IsolatedAsyncioTestCase):
 
 class TestTextoOpenaiApiEdgeCases(unittest.TestCase):
     def test_choices_vazio(self):
-        from nbr12721.llm import _texto_de_resposta_openai_api
+        from nbr12721.integrations.llm import _texto_de_resposta_openai_api
 
         class Resp:
             choices = []
@@ -74,7 +74,7 @@ class TestTextoOpenaiApiEdgeCases(unittest.TestCase):
         self.assertIsNone(_texto_de_resposta_openai_api(Resp()))
 
     def test_content_ausente(self):
-        from nbr12721.llm import _texto_de_resposta_openai_api
+        from nbr12721.integrations.llm import _texto_de_resposta_openai_api
 
         class Message:
             pass

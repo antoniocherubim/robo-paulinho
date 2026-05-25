@@ -2,7 +2,8 @@ import inspect
 import unittest
 
 from nbr12721.main import main
-from nbr12721.pipeline import _extrair_evidencias_criticas, executar_pipeline
+from nbr12721.orchestration.pipeline import executar_pipeline
+from nbr12721.orchestration.pipeline_llm import extrair_evidencias_criticas
 
 
 class TestPipelineExports(unittest.TestCase):
@@ -19,7 +20,7 @@ class TestPipelineExports(unittest.TestCase):
             "EVIDENCIAS CRITICAS EXTRAIDAS DO TEXTO ORIGINAL:\n"
             "B\n\nTEXTO FILTRADO COMPLEMENTAR:\nbar"
         )
-        evidencias = _extrair_evidencias_criticas(textos)
+        evidencias = extrair_evidencias_criticas(textos)
         self.assertIn("A", evidencias)
         self.assertIn("B", evidencias)
 

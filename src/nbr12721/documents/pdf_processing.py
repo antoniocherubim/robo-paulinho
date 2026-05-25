@@ -5,7 +5,7 @@ import os
 import sys
 import tempfile
 
-from .config import (
+from ..settings.config import (
     LIMITE_CHARS_LOTE,
     LIMITE_CHARS_TEXTO_FILTRADO,
     OCR_DPI,

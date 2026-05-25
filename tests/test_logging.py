@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from nbr12721.logging_setup import configurar_logging, reset_logging
+from nbr12721.settings.logging_setup import configurar_logging, reset_logging
 
 
 class TestLoggingSetup(unittest.TestCase):

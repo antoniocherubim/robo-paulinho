@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from nbr12721.llm import (
+from nbr12721.integrations.llm import (
     _anthropic_api_disponivel,
     _anthropic_provider_utilizavel,
     _openai_provider_utilizavel,
@@ -36,26 +36,26 @@ class TestDisponibilidadeEnv(unittest.TestCase):
 
 class TestProviderUtilizavel(unittest.TestCase):
     def test_anthropic_utilizavel_via_api(self):
-        with mock.patch("nbr12721.llm._anthropic_api_disponivel", return_value=True):
-            with mock.patch("nbr12721.llm._anthropic_agent_sdk_disponivel", return_value=False):
-                with mock.patch("nbr12721.llm._encontrar_claude", return_value=None):
+        with mock.patch("nbr12721.integrations.llm._anthropic_api_disponivel", return_value=True):
+            with mock.patch("nbr12721.integrations.llm._anthropic_agent_sdk_disponivel", return_value=False):
+                with mock.patch("nbr12721.integrations.llm._encontrar_claude", return_value=None):
                     self.assertTrue(_anthropic_provider_utilizavel())
 
     def test_anthropic_utilizavel_via_cli(self):
-        with mock.patch("nbr12721.llm._anthropic_api_disponivel", return_value=False):
-            with mock.patch("nbr12721.llm._anthropic_agent_sdk_disponivel", return_value=False):
-                with mock.patch("nbr12721.llm._encontrar_claude", return_value="/usr/bin/claude"):
+        with mock.patch("nbr12721.integrations.llm._anthropic_api_disponivel", return_value=False):
+            with mock.patch("nbr12721.integrations.llm._anthropic_agent_sdk_disponivel", return_value=False):
+                with mock.patch("nbr12721.integrations.llm._encontrar_claude", return_value="/usr/bin/claude"):
                     self.assertTrue(_anthropic_provider_utilizavel())
 
     def test_anthropic_nao_utilizavel(self):
-        with mock.patch("nbr12721.llm._anthropic_api_disponivel", return_value=False):
-            with mock.patch("nbr12721.llm._anthropic_agent_sdk_disponivel", return_value=False):
-                with mock.patch("nbr12721.llm._encontrar_claude", return_value=None):
+        with mock.patch("nbr12721.integrations.llm._anthropic_api_disponivel", return_value=False):
+            with mock.patch("nbr12721.integrations.llm._anthropic_agent_sdk_disponivel", return_value=False):
+                with mock.patch("nbr12721.integrations.llm._encontrar_claude", return_value=None):
                     self.assertFalse(_anthropic_provider_utilizavel())
 
     def test_provider_utilizavel_dispatch(self):
-        with mock.patch("nbr12721.llm._anthropic_provider_utilizavel", return_value=True):
-            with mock.patch("nbr12721.llm._openai_provider_utilizavel", return_value=False):
+        with mock.patch("nbr12721.integrations.llm._anthropic_provider_utilizavel", return_value=True):
+            with mock.patch("nbr12721.integrations.llm._openai_provider_utilizavel", return_value=False):
                 self.assertTrue(_provider_utilizavel(_PROVIDER_ANTHROPIC))
                 self.assertFalse(_provider_utilizavel(_PROVIDER_OPENAI))
 
@@ -76,14 +76,14 @@ class TestOrdenarProvidersAuto(unittest.TestCase):
 
 class TestExecutarProvider(unittest.IsolatedAsyncioTestCase):
     async def test_executar_anthropic(self):
-        with mock.patch("nbr12721.llm._cadeia_anthropic", new_callable=mock.AsyncMock) as mock_cadeia:
+        with mock.patch("nbr12721.integrations.llm._cadeia_anthropic", new_callable=mock.AsyncMock) as mock_cadeia:
             mock_cadeia.return_value = "texto"
             resultado = await _executar_provider(_PROVIDER_ANTHROPIC, "p", "sys")
         mock_cadeia.assert_awaited_once()
         self.assertEqual(resultado, "texto")
 
     async def test_executar_openai(self):
-        with mock.patch("nbr12721.llm._cadeia_openai", new_callable=mock.AsyncMock) as mock_cadeia:
+        with mock.patch("nbr12721.integrations.llm._cadeia_openai", new_callable=mock.AsyncMock) as mock_cadeia:
             mock_cadeia.return_value = "texto"
             resultado = await _executar_provider(_PROVIDER_OPENAI, "p", "sys")
         mock_cadeia.assert_awaited_once()

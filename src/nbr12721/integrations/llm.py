@@ -4,7 +4,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 
-from .config import (
+from ..settings.config import (
     TIMEOUT_CLAUDE_SDK,
     TIMEOUT_CLAUDE_CLI,
     MODELO_ANTHROPIC_PADRAO,
@@ -16,7 +16,7 @@ from .config import (
     resolver_llm_auto_primary,
     resolver_openai_model,
 )
-from .prompts import PROMPT_SISTEMA
+from ..extraction.prompts import PROMPT_SISTEMA
 
 import logging
 

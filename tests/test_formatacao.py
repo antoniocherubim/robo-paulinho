@@ -1,6 +1,6 @@
 import unittest
 
-from nbr12721.formatacao import formatar_brl
+from nbr12721.outputs.formatacao import formatar_brl
 
 
 class TestFormatarBrl(unittest.TestCase):

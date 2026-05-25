@@ -6,8 +6,8 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nbr12721.logging_setup import configurar_logging
-from nbr12721.pipeline import executar_pipeline
+from nbr12721.orchestration.pipeline import executar_pipeline
+from nbr12721.settings.logging_setup import configurar_logging
 
 __all__ = ["main"]
 
