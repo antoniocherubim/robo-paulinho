@@ -262,6 +262,15 @@ especialmente quando o tipo ideal (R16-N / R8-N) não está disponível na fonte
 
 Status: **operacional**, com impacto técnico indireto; deve ser revisado por responsável técnico.
 
+### Escrita da planilha com arquitetura híbrida
+
+O sistema usa **pandas** para montar DataFrames intermediários dos quadros tabulares.
+O sistema mantém **openpyxl** para escrever no template Excel original, preservando
+fórmulas, células mescladas, estilos e referências entre abas.
+A troca completa por `pandas.to_excel()` não é adequada, pois recriaria o layout.
+Alterações futuras na planilha base devem ser feitas preferencialmente em
+`excel_mapping.py` (células fixas) e `excel_tables.py` (regras de dados).
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.
@@ -375,7 +384,9 @@ reduza `OCR_DPI` para `120`.
 | `pdf_processing.py` | Extração PDF, OCR, pré-filtragem |
 | `serialization.py` | Parse JSON e compactação de resumos |
 | `cub.py` | Coleta e formatação de dados CUB |
-| `excel_writer.py` | Preenchimento da planilha Excel |
+| `excel_tables.py` | DataFrames intermediários por quadro |
+| `excel_mapping.py` | Mapeamento JSON → células do template |
+| `excel_writer.py` | Orquestração do preenchimento (pandas + openpyxl) |
 | `formatacao.py` | Formatação BRL |
 
 ---

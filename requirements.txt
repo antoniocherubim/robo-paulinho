@@ -3,6 +3,7 @@ openai
 claude-agent-sdk
 python-dotenv
 openpyxl
+pandas
 pdfplumber
 pdf2image
 pytesseract
