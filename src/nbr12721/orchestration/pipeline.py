@@ -173,7 +173,7 @@ async def executar_pipeline():
 
     preencher_cub_automatico(dados, cub_info)
 
-    resultado_validacao = registrar_validacao_dados(dados)
+    resultado_validacao = registrar_validacao_dados(dados, cub_info)
 
     if usar_deterministico and usar_fallback and not resultado_validacao["ok"]:
         logger.warning("Validacao deterministica falhou; tentando fallback LLM...")
@@ -184,7 +184,7 @@ async def executar_pipeline():
             sys.exit(1)
 
         preencher_cub_automatico(dados, cub_info)
-        resultado_validacao = registrar_validacao_dados(dados)
+        resultado_validacao = registrar_validacao_dados(dados, cub_info)
         logger.info(
             "Fallback LLM concluido; validacao final ok=%s score=%.4f",
             resultado_validacao["ok"],

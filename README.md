@@ -251,6 +251,17 @@ pavimentos tipo.
 Status: **a validar com engenheiro civil**, especialmente quando houver torres,
 pavimentos tipo não idênticos ou áreas comuns distribuídas por pavimento.
 
+### Validação semântica não bloqueante
+
+Além da completude estrutural, o sistema sinaliza campos que parecem lixo OCR ou
+templates vazios nos Quadros VI, VII e VIII.
+Esses avisos **não impedem** o preenchimento da planilha por padrão.
+Eles servem para revisão humana antes de considerar a planilha final confiável.
+CUB incompatível com o porte do empreendimento também entra como aviso semântico,
+especialmente quando o tipo ideal (R16-N / R8-N) não está disponível na fonte parseada.
+
+Status: **operacional**, com impacto técnico indireto; deve ser revisado por responsável técnico.
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.

@@ -13,7 +13,10 @@ __all__ = [
     "preencher_derivados_seguros",
     "preencher_cub_automatico",
     "registrar_validacao_dados",
+    "validar_cub_semantico",
 ]
+
+_TOLERANCIA_VALOR_CUB = 0.01
 
 
 def _tipo_cub_residencial_por_pavimentos(num_pavimentos: int, valores: dict) -> str:
@@ -112,6 +115,52 @@ def _preencher_garagens_quadro5(dados: dict) -> None:
         logger.info("Garagens derivadas para quadro5: %s", q5["garagens"])
 
 
+def _tipo_cub_pelo_valor(valor_cub: float, valores: dict) -> str:
+    for tipo, val in valores.items():
+        try:
+            if abs(float(val) - float(valor_cub)) <= _TOLERANCIA_VALOR_CUB:
+                return str(tipo)
+        except (TypeError, ValueError):
+            continue
+    return ""
+
+
+def validar_cub_semantico(dados: dict, cub_info: dict | None) -> list[str]:
+    """Avisos quando CUB residencial alto nao esta disponivel na fonte parseada."""
+    if not cub_info or not isinstance(cub_info.get("valores"), dict):
+        return []
+    valores = cub_info["valores"]
+    if not valores:
+        return []
+
+    try:
+        num_pav = int(dados.get("projeto", {}).get("numPavimentos") or 0)
+    except (TypeError, ValueError):
+        num_pav = 0
+    try:
+        valor_cub = float(dados.get("quadro3", {}).get("valorCub") or 0)
+    except (TypeError, ValueError):
+        valor_cub = 0.0
+    if num_pav < 8 or valor_cub <= 0:
+        return []
+
+    pp = dados.get("projeto", {}).get("projetoPadrao", {})
+    if not isinstance(pp, dict) or not pp.get("R"):
+        return []
+
+    tem_r16 = "R16-N" in valores
+    tem_r8 = "R8-N" in valores
+    avisos: list[str] = []
+
+    if not tem_r16 and not tem_r8:
+        avisos.append("quadro3.valorCub.tipo_residencial_alto_indisponivel")
+        tipo_usado = _tipo_cub_pelo_valor(valor_cub, valores)
+        if tipo_usado in ("R1-N", "R4-N"):
+            avisos.append("quadro3.valorCub.fallback_baixo_para_predio_alto")
+
+    return avisos
+
+
 def _inteiro_positivo(valor) -> int:
     try:
         numero = int(valor)
@@ -120,9 +169,13 @@ def _inteiro_positivo(valor) -> int:
     return numero if numero > 0 else 0
 
 
-def registrar_validacao_dados(dados: dict) -> dict:
+def registrar_validacao_dados(dados: dict, cub_info: dict | None = None) -> dict:
     preencher_derivados_seguros(dados)
     resultado = validar_dados_extraidos(dados)
+    extras = validar_cub_semantico(dados, cub_info)
+    resultado["avisos_semanticos"] = sorted(
+        set(resultado.get("avisos_semanticos", []) + extras)
+    )
 
     os.makedirs(PASTA_SAIDA, exist_ok=True)
     with open(caminho_saida(ARQ_VALIDACAO_JSON), "w", encoding="utf-8") as f:
@@ -144,5 +197,10 @@ def registrar_validacao_dados(dados: dict) -> dict:
         logger.info("Avisos de validacao:")
         for item in resultado["avisos"]:
             logger.info("  - %s", item)
+
+    if resultado.get("avisos_semanticos"):
+        logger.warning("Avisos semanticos:")
+        for item in resultado["avisos_semanticos"]:
+            logger.warning("  - %s", item)
 
     return resultado

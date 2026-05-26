@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
+import re
+
 __all__ = ["validar_dados_extraidos"]
+
+_RE_MARCADOR_PDF = re.compile(r"^\[[^\]]+\.pdf\]", re.IGNORECASE)
+_RE_FRASES_ADMIN = re.compile(
+    r"\b(?:CERTIFICADO\s+DE\s+VISTORIA|HABITE-?SE|"
+    r"FICARA\s+CONDICIONAD|FICARA\s+CONDICINAD)\b",
+    re.IGNORECASE,
+)
+_RE_CIDADE_UF = re.compile(
+    r"\b[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{1,40}[-/][A-Z]{2}\b",
+    re.IGNORECASE,
+)
+_RE_CREA = re.compile(
+    r"\b[A-Z]{2}\s*[-/]?\s*\d{4,6}\s*/?\s*[A-Z]?\b",
+    re.IGNORECASE,
+)
+_RE_SUFIXO_EMPRESA = re.compile(
+    r"\b(?:LTDA|S/?A|SPE|EIRELI)\b",
+    re.IGNORECASE,
+)
 
 CRITICOS: frozenset[str] = frozenset(
     {
@@ -126,6 +147,100 @@ def _validar_quadro1_area_tipo(dados: dict) -> list[str]:
     return inconsistencias
 
 
+def _texto_parece_lixo_ocr(valor: str) -> bool:
+    """True se o texto preenchido parece residuo OCR, nao dado semantico util."""
+    texto = str(valor).strip()
+    if not texto:
+        return False
+    if _RE_SUFIXO_EMPRESA.search(texto) and _RE_CIDADE_UF.search(texto):
+        return False
+    if _RE_SUFIXO_EMPRESA.search(texto) and len(texto) > 12:
+        return False
+    if _RE_CIDADE_UF.fullmatch(texto) or _RE_CIDADE_UF.search(texto):
+        if not _RE_FRASES_ADMIN.search(texto) and not texto.lstrip().startswith(","):
+            return False
+    if _RE_CREA.search(texto) and not _RE_FRASES_ADMIN.search(texto):
+        return False
+    if re.match(r"^[,;.:|\-_–—]+\s*\S", texto):
+        return True
+    if _RE_MARCADOR_PDF.search(texto):
+        return True
+    if _RE_FRASES_ADMIN.search(texto):
+        return True
+    letras = len(re.findall(r"[A-Za-zÀ-ÿ]", texto, re.IGNORECASE))
+    simbolos = len(re.findall(r"[^A-Za-zÀ-ÿ0-9\s]", texto))
+    if letras > 0 and simbolos / letras > 0.4:
+        return True
+    return False
+
+
+def _texto_contem_marcador_pdf(valor: str) -> bool:
+    return bool(_RE_MARCADOR_PDF.search(str(valor).strip()))
+
+
+def _item_template_vazio(item: dict, campos: tuple[str, ...]) -> bool:
+    if not isinstance(item, dict):
+        return True
+    for campo in campos:
+        valor = item.get(campo)
+        if isinstance(valor, str):
+            if valor.strip():
+                return False
+        elif isinstance(valor, (int, float)):
+            if valor != 0:
+                return False
+        elif valor:
+            return False
+    return True
+
+
+def _lista_template_vazia(
+    dados: dict, path: str, campos: tuple[str, ...]
+) -> bool:
+    itens = _get_path(dados, path)
+    if not isinstance(itens, list) or len(itens) == 0:
+        return False
+    return all(
+        _item_template_vazio(item, campos) for item in itens if isinstance(item, dict)
+    )
+
+
+def _validar_semantica_textual(dados: dict) -> list[str]:
+    avisos: list[str] = []
+    checks = (
+        ("projeto.nomeEdificio", "projeto.nomeEdificio.lixo_ocr", _texto_parece_lixo_ocr),
+        ("incorporador.nome", "incorporador.nome.lixo_ocr", _texto_parece_lixo_ocr),
+        ("projeto.localConstrucao", "projeto.localConstrucao.lixo_ocr", _texto_parece_lixo_ocr),
+    )
+    for path, codigo, fn in checks:
+        valor = _get_path(dados, path)
+        if isinstance(valor, str) and valor.strip() and fn(valor):
+            avisos.append(codigo)
+    endereco = _get_path(dados, "responsavel.endereco")
+    if isinstance(endereco, str) and endereco.strip() and _texto_contem_marcador_pdf(endereco):
+        avisos.append("responsavel.endereco.lixo_ocr")
+    return avisos
+
+
+def _validar_templates_quadros(dados: dict) -> list[str]:
+    avisos: list[str] = []
+    templates = (
+        ("quadro6.equipamentos", ("nome", "tipo", "acabamento", "detalhes")),
+        (
+            "quadro7.acabamentos",
+            ("dependencia", "pisos", "paredes", "tetos", "outros"),
+        ),
+        (
+            "quadro8.acabamentos",
+            ("dependencia", "pisos", "paredes", "tetos", "outros"),
+        ),
+    )
+    for path, campos in templates:
+        if _lista_template_vazia(dados, path, campos):
+            avisos.append(f"{path}.template_vazio")
+    return avisos
+
+
 def _campo_preenchido(dados: dict, path: str) -> bool:
     if path == "quadro1.pavimentos":
         return _quadro1_preenchido(dados)
@@ -144,10 +259,14 @@ def validar_dados_extraidos(dados: dict) -> dict:
     preenchidos = total - len(criticos_faltantes) - len(avisos)
     score = round(preenchidos / total, 4) if total else 0.0
     inconsistencias = _validar_quadro1_area_tipo(dados)
+    avisos_semanticos = sorted(
+        set(_validar_semantica_textual(dados) + _validar_templates_quadros(dados))
+    )
     return {
         "ok": len(criticos_faltantes) == 0,
         "score": score,
         "criticos_faltantes": criticos_faltantes,
         "avisos": avisos,
         "inconsistencias": inconsistencias,
+        "avisos_semanticos": avisos_semanticos,
     }

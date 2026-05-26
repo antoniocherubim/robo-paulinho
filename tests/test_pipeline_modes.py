@@ -16,6 +16,7 @@ from nbr12721.orchestration.pipeline_postprocess import (
     preencher_derivados_seguros,
     preencher_cub_automatico,
     registrar_validacao_dados,
+    validar_cub_semantico,
 )
 
 
@@ -208,6 +209,38 @@ class TestPipelineModes(unittest.TestCase):
                 resultado = registrar_validacao_dados(_dados_minimos_validos())
 
             self.assertTrue(resultado["ok"])
+
+    def test_validar_cub_semantico_predio_alto_sem_r16_r8(self):
+        dados = {
+            "projeto": {
+                "numPavimentos": 21,
+                "projetoPadrao": {"R": True},
+            },
+            "quadro3": {"valorCub": 3143.09},
+        }
+        cub_info = {"valores": {"R1-N": 3143.09}}
+        avisos = validar_cub_semantico(dados, cub_info)
+        self.assertIn("quadro3.valorCub.tipo_residencial_alto_indisponivel", avisos)
+        self.assertIn("quadro3.valorCub.fallback_baixo_para_predio_alto", avisos)
+
+    def test_validar_cub_semantico_predio_alto_com_r16_disponivel_sem_aviso(self):
+        dados = {
+            "projeto": {
+                "numPavimentos": 21,
+                "projetoPadrao": {"R": True},
+            },
+            "quadro3": {"valorCub": 2492.09},
+        }
+        cub_info = {"valores": {"R16-N": 2492.09, "R1-N": 3143.09}}
+        self.assertEqual(validar_cub_semantico(dados, cub_info), [])
+
+    def test_validar_cub_semantico_sem_cub_info_retorna_vazio(self):
+        dados = {
+            "projeto": {"numPavimentos": 21, "projetoPadrao": {"R": True}},
+            "quadro3": {"valorCub": 3143.09},
+        }
+        self.assertEqual(validar_cub_semantico(dados, None), [])
+        self.assertEqual(validar_cub_semantico(dados, {}), [])
 
     def test_config_validacao_bloqueante_default_bool(self):
         self.assertIsInstance(VALIDACAO_BLOQUEANTE, bool)
