@@ -88,9 +88,13 @@ ARQ_RESUMOS_LOTES = "resumos_lotes.txt"
 ARQ_RESPOSTA_BRUTA = "resposta_bruta.txt"
 ARQ_DADOS_JSON = "dados_extraidos.json"
 ARQ_VALIDACAO_JSON = "validacao_dados.json"
+ARQ_AUDITORIA_PLANILHA_JSON = "auditoria_planilha.json"
 
 # --- Validacao de completude do JSON ---
 VALIDACAO_BLOQUEANTE = _resolver_bool_env("VALIDACAO_BLOQUEANTE", False)
+
+# --- Auditoria pos-preenchimento da planilha ---
+AUDITORIA_PLANILHA = _resolver_bool_env("AUDITORIA_PLANILHA", True)
 
 # --- Fallback LLM apos extracao deterministica invalida ---
 FALLBACK_LLM_SE_INVALIDO = _resolver_bool_env("FALLBACK_LLM_SE_INVALIDO", False)

@@ -6,12 +6,14 @@ import os
 import sys
 
 from ..settings.config import (
+    ARQ_AUDITORIA_PLANILHA_JSON,
     ARQ_DADOS_JSON,
     ARQ_PLANILHA_SAIDA,
     ARQ_RESUMOS_LOTES,
     ARQ_TEXTO_EXTRAIDO,
     ARQ_TEXTO_FILTRADO,
     ARQ_VALIDACAO_JSON,
+    AUDITORIA_PLANILHA,
     PASTA_DOCS,
     PASTA_SAIDA,
     PLANILHA,
@@ -235,6 +237,35 @@ async def executar_pipeline():
     path_planilha_saida = caminho_saida(ARQ_PLANILHA_SAIDA)
     preencher_planilha(dados, PLANILHA, path_planilha_saida)
 
+    if AUDITORIA_PLANILHA:
+        try:
+            from ..outputs.excel_audit import auditar_planilha_preenchida
+
+            resultado_auditoria = auditar_planilha_preenchida(dados, path_planilha_saida)
+            path_auditoria = caminho_saida(ARQ_AUDITORIA_PLANILHA_JSON)
+            with open(path_auditoria, "w", encoding="utf-8") as f:
+                json.dump(resultado_auditoria, f, ensure_ascii=False, indent=2)
+            logger.info(
+                "Auditoria planilha salva: %s | ok=%s | celulas=%s",
+                path_auditoria,
+                resultado_auditoria.get("ok"),
+                resultado_auditoria.get("celulas_verificadas"),
+            )
+            if resultado_auditoria.get("erro"):
+                logger.warning(
+                    "Auditoria planilha com erro: %s",
+                    resultado_auditoria["erro"],
+                )
+            elif resultado_auditoria.get("divergencias"):
+                logger.warning("Divergencias auditoria planilha:")
+                for item in resultado_auditoria["divergencias"]:
+                    logger.warning("  - %s (%s)", item["celula"], item["campo"])
+        except Exception as exc:
+            logger.exception(
+                "Auditoria planilha falhou com excecao inesperada; pipeline continua: %s",
+                exc,
+            )
+
     logger.info("=" * 50)
     logger.info("CONCLUIDO")
     logger.info("=" * 50)
@@ -242,4 +273,6 @@ async def executar_pipeline():
     logger.info("  - %s", ARQ_PLANILHA_SAIDA)
     logger.info("  - %s", ARQ_DADOS_JSON)
     logger.info("  - %s", ARQ_VALIDACAO_JSON)
+    if AUDITORIA_PLANILHA:
+        logger.info("  - %s", ARQ_AUDITORIA_PLANILHA_JSON)
     logger.info("Abra no Excel e pressione Ctrl+Shift+F9")

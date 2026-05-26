@@ -271,6 +271,15 @@ A troca completa por `pandas.to_excel()` não é adequada, pois recriaria o layo
 Alterações futuras na planilha base devem ser feitas preferencialmente em
 `excel_mapping.py` (células fixas) e `excel_tables.py` (regras de dados).
 
+### Auditoria pós-preenchimento
+
+Após gerar o XLSX, o pipeline pode comparar `dados_extraidos.json` com as células
+efetivamente preenchidas e salvar `data/output/saida/auditoria_planilha.json`.
+Isso valida o **mapeamento técnico JSON → planilha**; não substitui revisão de
+engenharia civil, mas ajuda a detectar erro de célula, linha ou desalinhamento com o template.
+A auditoria é **não bloqueante** (falhas são registradas em log e no campo `erro` do relatório).
+Controle: `AUDITORIA_PLANILHA=true` no `.env` (padrão).
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.
@@ -387,6 +396,7 @@ reduza `OCR_DPI` para `120`.
 | `excel_tables.py` | DataFrames intermediários por quadro |
 | `excel_mapping.py` | Mapeamento JSON → células do template |
 | `excel_writer.py` | Orquestração do preenchimento (pandas + openpyxl) |
+| `excel_audit.py` | Auditoria JSON vs células do XLSX preenchido |
 | `formatacao.py` | Formatação BRL |
 
 ---
