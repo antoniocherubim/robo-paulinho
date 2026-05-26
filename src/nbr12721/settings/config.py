@@ -90,6 +90,14 @@ ARQ_DADOS_JSON = "dados_extraidos.json"
 ARQ_VALIDACAO_JSON = "validacao_dados.json"
 ARQ_AUDITORIA_PLANILHA_JSON = "auditoria_planilha.json"
 
+# --- Comparacao determinístico vs LLM ---
+PASTA_COMPARACAO = "comparacao"
+ARQ_DADOS_DETERMINISTICO_JSON = "dados_deterministico.json"
+ARQ_VALIDACAO_DETERMINISTICO_JSON = "validacao_deterministico.json"
+ARQ_DADOS_LLM_JSON = "dados_llm.json"
+ARQ_VALIDACAO_LLM_JSON = "validacao_llm.json"
+ARQ_COMPARACAO_MODOS_JSON = "comparacao_modos.json"
+
 # --- Validacao de completude do JSON ---
 VALIDACAO_BLOQUEANTE = _resolver_bool_env("VALIDACAO_BLOQUEANTE", False)
 
@@ -156,3 +164,7 @@ def resolver_llm_auto_primary() -> str:
 
 def caminho_saida(nome_arquivo: str) -> str:
     return os.path.join(PASTA_SAIDA, nome_arquivo)
+
+
+def caminho_comparacao(nome_arquivo: str) -> str:
+    return os.path.join(PASTA_SAIDA, PASTA_COMPARACAO, nome_arquivo)

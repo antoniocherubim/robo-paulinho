@@ -7,10 +7,23 @@ from unittest.mock import AsyncMock, patch
 
 from nbr12721.settings.config import VALIDACAO_BLOQUEANTE
 from nbr12721.orchestration.pipeline_llm import extrair_dados_via_llm
+from nbr12721.orchestration.pipeline_compare import (
+    executar_comparacao_modos,
+    gerar_relatorio_comparacao,
+)
 from nbr12721.orchestration.pipeline_modes import (
+    comparar_modos,
     somente_json,
     usar_extracao_deterministica,
     usar_fallback_llm,
+    usar_texto_filtrado_cache,
+)
+from nbr12721.settings.config import (
+    ARQ_COMPARACAO_MODOS_JSON,
+    ARQ_DADOS_DETERMINISTICO_JSON,
+    ARQ_DADOS_JSON,
+    ARQ_DADOS_LLM_JSON,
+    ARQ_VALIDACAO_DETERMINISTICO_JSON,
 )
 from nbr12721.orchestration.pipeline_postprocess import (
     preencher_derivados_seguros,
@@ -91,6 +104,148 @@ class TestPipelineModes(unittest.TestCase):
     def test_somente_json_por_flag(self):
         self.assertTrue(somente_json(["prog", "--json-only"]))
         self.assertFalse(somente_json(["prog"]))
+
+    def test_usar_texto_filtrado_cache_flag(self):
+        self.assertTrue(
+            usar_texto_filtrado_cache(["prog", "--usar-texto-filtrado-cache"])
+        )
+        self.assertFalse(usar_texto_filtrado_cache(["prog"]))
+
+    def test_comparar_modos_flag(self):
+        self.assertTrue(comparar_modos(["prog", "--comparar-modos"]))
+        self.assertFalse(comparar_modos(["prog"]))
+
+    def test_somente_json_implica_comparar_modos(self):
+        self.assertTrue(somente_json(["prog", "--comparar-modos"]))
+
+    def test_comparacao_detecta_melhorias_llm(self):
+        dados_det = {"incorporador": {"cnpj": ""}, "quadro6": {"equipamentos": []}}
+        dados_llm = {"incorporador": {"cnpj": "12.345.678/0001-90"}}
+        val_det = {
+            "ok": False,
+            "score": 0.5,
+            "criticos_faltantes": ["incorporador.cnpj"],
+            "avisos_semanticos": ["quadro6.equipamentos.template_vazio"],
+        }
+        val_llm = {
+            "ok": True,
+            "score": 0.95,
+            "criticos_faltantes": [],
+            "avisos_semanticos": [],
+        }
+        relatorio = gerar_relatorio_comparacao(
+            dados_det, dados_llm, val_det, val_llm
+        )
+        self.assertIn("incorporador.cnpj", relatorio["melhorias_llm"])
+        self.assertIn("quadro6.equipamentos.template_vazio", relatorio["melhorias_llm"])
+        self.assertIn("validacao.ok", relatorio["melhorias_llm"])
+
+    def test_comparacao_detecta_regressoes_llm(self):
+        dados_det = {"incorporador": {"cnpj": "12.345.678/0001-90"}}
+        dados_llm = {"incorporador": {"cnpj": ""}}
+        val_det = {
+            "ok": True,
+            "score": 0.95,
+            "criticos_faltantes": [],
+            "avisos_semanticos": [],
+        }
+        val_llm = {
+            "ok": False,
+            "score": 0.5,
+            "criticos_faltantes": ["incorporador.cnpj"],
+            "avisos_semanticos": [],
+        }
+        relatorio = gerar_relatorio_comparacao(
+            dados_det, dados_llm, val_det, val_llm
+        )
+        self.assertIn("incorporador.cnpj", relatorio["regressoes_llm"])
+        self.assertIn("validacao.ok", relatorio["regressoes_llm"])
+
+    def test_comparacao_nao_sobrescreve_saida_principal(self):
+        dados_det = _dados_minimos_validos()
+        dados_llm = _dados_minimos_validos()
+        dados_llm["incorporador"]["nome"] = "OUTRO NOME VIA LLM"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            comparacao_dir = os.path.join(tmpdir, "comparacao")
+            path_principal = os.path.join(tmpdir, ARQ_DADOS_JSON)
+            with open(path_principal, "w", encoding="utf-8") as f:
+                json.dump({"preservar": True}, f)
+            with open(path_principal, encoding="utf-8") as f:
+                conteudo_original = f.read()
+
+            def _caminho_comparacao(nome: str) -> str:
+                return os.path.join(comparacao_dir, nome)
+
+            with (
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_deterministico",
+                    return_value=dados_det,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_via_llm",
+                    new_callable=AsyncMock,
+                    return_value=dados_llm,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.caminho_comparacao",
+                    side_effect=_caminho_comparacao,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+            ):
+                relatorio = asyncio.run(
+                    executar_comparacao_modos("texto filtrado", None)
+                )
+
+            with open(path_principal, encoding="utf-8") as f:
+                self.assertEqual(f.read(), conteudo_original)
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_DADOS_DETERMINISTICO_JSON)))
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_DADOS_LLM_JSON)))
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_COMPARACAO_MODOS_JSON)))
+            self.assertIn("melhorias_llm", relatorio)
+
+    def test_comparacao_dados_json_inclui_derivados_da_validacao(self):
+        dados = _dados_minimos_validos()
+        dados["quadro5"]["garagens"] = ""
+        dados["projeto"]["vagasComum"] = 72
+        dados["projeto"]["vagasAcessorio"] = 50
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            comparacao_dir = os.path.join(tmpdir, "comparacao")
+
+            def _caminho_comparacao(nome: str) -> str:
+                return os.path.join(comparacao_dir, nome)
+
+            with (
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_deterministico",
+                    return_value=dados,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_via_llm",
+                    new_callable=AsyncMock,
+                    return_value=_dados_minimos_validos(),
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.caminho_comparacao",
+                    side_effect=_caminho_comparacao,
+                ),
+            ):
+                asyncio.run(executar_comparacao_modos("texto filtrado", None))
+
+            path_dados = _caminho_comparacao(ARQ_DADOS_DETERMINISTICO_JSON)
+            path_validacao = _caminho_comparacao(ARQ_VALIDACAO_DETERMINISTICO_JSON)
+            with open(path_dados, encoding="utf-8") as f:
+                salvo = json.load(f)
+            with open(path_validacao, encoding="utf-8") as f:
+                validacao = json.load(f)
+
+        garagens_esperadas = "72 vagas comuns; 50 vagas duplas"
+        self.assertEqual(salvo["quadro5"]["garagens"], garagens_esperadas)
+        self.assertNotIn("quadro5.garagens", validacao["criticos_faltantes"])
 
     def test_preencher_cub_automatico_residencial(self):
         dados = {

@@ -26,7 +26,14 @@ from ..integrations.cub import buscar_cub_sinduscon
 from ..outputs.excel_writer import preencher_planilha
 from ..outputs.formatacao import formatar_brl
 from .pipeline_llm import extrair_dados_via_llm, tratar_erro_llm
-from .pipeline_modes import somente_json, usar_extracao_deterministica, usar_fallback_llm
+from .pipeline_compare import carregar_texto_filtrado_cache, executar_comparacao_modos
+from .pipeline_modes import (
+    comparar_modos,
+    somente_json,
+    usar_extracao_deterministica,
+    usar_fallback_llm,
+    usar_texto_filtrado_cache,
+)
 from .pipeline_postprocess import preencher_cub_automatico, registrar_validacao_dados
 
 logger = logging.getLogger(__name__)
@@ -45,42 +52,49 @@ def _formatar_bloco_pagina(pdf, pagina, texto):
     )
 
 async def executar_pipeline():
-    usar_deterministico = usar_extracao_deterministica()
-    usar_fallback = usar_fallback_llm()
-    json_only = somente_json()
+    argv = sys.argv
+    usar_deterministico = usar_extracao_deterministica(argv)
+    usar_fallback = usar_fallback_llm(argv)
+    json_only = somente_json(argv)
+    modo_comparacao = comparar_modos(argv)
+    cache_filtrado = usar_texto_filtrado_cache(argv)
     logger.info("=" * 60)
     logger.info("NBR 12721:2006 - PREENCHIMENTO AUTOMATICO")
-    if usar_deterministico:
+    if modo_comparacao:
+        logger.info("Modo: comparacao deterministico vs LLM (sem re-OCR)")
+    elif usar_deterministico:
         logger.info("Modo: extrator deterministico (sem LLM)")
     else:
         logger.info("Powered by LLM multi-provider (Anthropic / OpenAI)")
     logger.info(
-        "Flags: deterministico=%s | fallback_llm=%s | json_only=%s | skip_extracao=%s",
+        "Flags: deterministico=%s | fallback_llm=%s | json_only=%s | "
+        "comparar_modos=%s | texto_filtrado_cache=%s | skip_extracao=%s",
         usar_deterministico,
         usar_fallback,
         json_only,
-        "--skip-extracao" in sys.argv,
+        modo_comparacao,
+        cache_filtrado,
+        "--skip-extracao" in argv,
     )
     logger.info("=" * 60)
+
+    if modo_comparacao:
+        textos = carregar_texto_filtrado_cache()
+        logger.info("Buscando informacoes CUB...")
+        cub_info = buscar_cub_sinduscon()
+        await executar_comparacao_modos(textos, cub_info)
+        return
 
     if not os.path.exists(PLANILHA):
         logger.error("Planilha nao encontrada: %s", PLANILHA)
         sys.exit(1)
     logger.info("Planilha modelo: %s", PLANILHA)
 
-    pdfs = sorted(
-        set(glob.glob(os.path.join(PASTA_DOCS, "*.pdf")))
-        | set(glob.glob(os.path.join(PASTA_DOCS, "*.PDF")))
-    )
-    if not pdfs:
-        os.makedirs(PASTA_DOCS, exist_ok=True)
-        logger.error("Nenhum PDF em '%s/'", PASTA_DOCS)
-        logger.error("Coloque: memorial descritivo, quadro de areas, plantas (PDF)")
-        sys.exit(1)
-
     path_textos_extraidos = caminho_saida(ARQ_TEXTO_EXTRAIDO)
     path_textos_filtrados = caminho_saida(ARQ_TEXTO_FILTRADO)
-    if "--skip-extracao" in sys.argv and os.path.exists(path_textos_extraidos):
+    if cache_filtrado:
+        textos = carregar_texto_filtrado_cache()
+    elif "--skip-extracao" in argv and os.path.exists(path_textos_extraidos):
         with open(path_textos_extraidos, encoding="utf-8") as f:
             textos = f.read()
         logger.info("Usando cache de texto: %s (%s chars)", path_textos_extraidos, len(textos))
@@ -91,6 +105,16 @@ async def executar_pipeline():
             f.write(textos)
         logger.info("Filtrado salvo em: %s", path_textos_filtrados)
     else:
+        pdfs = sorted(
+            set(glob.glob(os.path.join(PASTA_DOCS, "*.pdf")))
+            | set(glob.glob(os.path.join(PASTA_DOCS, "*.PDF")))
+        )
+        if not pdfs:
+            os.makedirs(PASTA_DOCS, exist_ok=True)
+            logger.error("Nenhum PDF em '%s/'", PASTA_DOCS)
+            logger.error("Coloque: memorial descritivo, quadro de areas, plantas (PDF)")
+            sys.exit(1)
+
         os.makedirs(PASTA_SAIDA, exist_ok=True)
         logger.info(
             "%s PDF(s) | Extraindo e filtrando em streaming (1 PDF, 1 pagina por vez)...",

@@ -43,6 +43,26 @@ Reutilizar texto já extraído (pula leitura de PDFs):
 python3 main.py --skip-extracao
 ```
 
+Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original):
+
+```bash
+python3 main.py --usar-texto-filtrado-cache
+```
+
+### Comparação determinístico vs LLM
+
+Compare os dois modos de extração no **mesmo** `textos_filtrados.txt`, sem re-OCR e **sem** sobrescrever `dados_extraidos.json`, a planilha principal nem `validacao_dados.json`. Artefatos ficam em `data/output/saida/comparacao/`.
+
+```bash
+# 1) Gerar textos_filtrados.txt uma vez (pipeline normal com OCR)
+PYTHONPATH=src ./venv/bin/python main.py --deterministico --json-only
+
+# 2) Comparar modos no mesmo texto cacheado
+PYTHONPATH=src ./venv/bin/python main.py --comparar-modos --usar-texto-filtrado-cache
+```
+
+O relatório `comparacao_modos.json` lista `melhorias_llm`, `regressoes_llm` e `campos_diferentes`. A decisão final entre modos é de revisão humana/engenharia, não automática.
+
 Artefatos gerados em `data/output/saida/` (`NBR_12721_preenchida.xlsx`, `dados_extraidos.json`, etc.).
 
 ### Logs

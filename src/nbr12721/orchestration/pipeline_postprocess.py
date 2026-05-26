@@ -10,6 +10,7 @@ from ..settings.config import ARQ_VALIDACAO_JSON, PASTA_SAIDA, caminho_saida
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "montar_resultado_validacao",
     "preencher_derivados_seguros",
     "preencher_cub_automatico",
     "registrar_validacao_dados",
@@ -169,18 +170,28 @@ def _inteiro_positivo(valor) -> int:
     return numero if numero > 0 else 0
 
 
-def registrar_validacao_dados(dados: dict, cub_info: dict | None = None) -> dict:
+def montar_resultado_validacao(dados: dict, cub_info: dict | None = None) -> dict:
     preencher_derivados_seguros(dados)
     resultado = validar_dados_extraidos(dados)
     extras = validar_cub_semantico(dados, cub_info)
     resultado["avisos_semanticos"] = sorted(
         set(resultado.get("avisos_semanticos", []) + extras)
     )
+    return resultado
 
-    os.makedirs(PASTA_SAIDA, exist_ok=True)
-    with open(caminho_saida(ARQ_VALIDACAO_JSON), "w", encoding="utf-8") as f:
+
+def registrar_validacao_dados(
+    dados: dict,
+    cub_info: dict | None = None,
+    path_validacao: str | None = None,
+) -> dict:
+    resultado = montar_resultado_validacao(dados, cub_info)
+    destino = path_validacao or caminho_saida(ARQ_VALIDACAO_JSON)
+
+    os.makedirs(os.path.dirname(destino) or PASTA_SAIDA, exist_ok=True)
+    with open(destino, "w", encoding="utf-8") as f:
         json.dump(resultado, f, ensure_ascii=False, indent=2)
-    logger.info("Relatorio de validacao salvo: %s", caminho_saida(ARQ_VALIDACAO_JSON))
+    logger.info("Relatorio de validacao salvo: %s", destino)
 
     logger.info(
         "Validacao JSON: ok=%s score=%.4f",
