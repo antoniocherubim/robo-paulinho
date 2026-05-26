@@ -85,6 +85,47 @@ def _quadro2_preenchido(dados: dict) -> bool:
     return True
 
 
+def _validar_quadro1_area_tipo(dados: dict) -> list[str]:
+    """Detecta area total do conjunto lancada como area unitaria no pavimento tipo."""
+    inconsistencias: list[str] = []
+    pavimentos = _get_path(dados, "quadro1.pavimentos")
+    unidades = _get_path(dados, "quadro2.unidades")
+    qtd_unidades_projeto = _get_path(dados, "projeto.qtdUnidades")
+
+    if not isinstance(pavimentos, list) or not isinstance(unidades, list):
+        return inconsistencias
+    if not isinstance(qtd_unidades_projeto, (int, float)) or qtd_unidades_projeto <= 0:
+        return inconsistencias
+
+    area_unidades_total = sum(
+        float(u.get("areaPrivCobPadrao", 0) or 0)
+        * float(u.get("qtdUnidades", 0) or 0)
+        for u in unidades
+        if isinstance(u, dict)
+    )
+    if area_unidades_total <= 0:
+        return inconsistencias
+
+    for pav in pavimentos:
+        if not isinstance(pav, dict):
+            continue
+        nome = str(pav.get("nome", ""))
+        if "tipo" not in nome.lower():
+            continue
+        qtd_pav = int(pav.get("qtdPavimentos", 0) or 0)
+        area_pav = float(pav.get("areaPrivCobPadrao", 0) or 0)
+        if qtd_pav <= 1 or area_pav <= 0:
+            continue
+        area_tipo_total = area_pav * qtd_pav
+        if area_tipo_total > area_unidades_total * 1.5:
+            inconsistencias.append(
+                "quadro1.pavimentos.area_tipo_possivelmente_total_duplicada"
+            )
+            break
+
+    return inconsistencias
+
+
 def _campo_preenchido(dados: dict, path: str) -> bool:
     if path == "quadro1.pavimentos":
         return _quadro1_preenchido(dados)
@@ -102,9 +143,11 @@ def validar_dados_extraidos(dados: dict) -> dict:
     total = len(CRITICOS) + len(AVISOS)
     preenchidos = total - len(criticos_faltantes) - len(avisos)
     score = round(preenchidos / total, 4) if total else 0.0
+    inconsistencias = _validar_quadro1_area_tipo(dados)
     return {
         "ok": len(criticos_faltantes) == 0,
         "score": score,
         "criticos_faltantes": criticos_faltantes,
         "avisos": avisos,
+        "inconsistencias": inconsistencias,
     }

@@ -47,7 +47,7 @@ def _item_pavimento_quadro1_vazio() -> list[dict]:
 
 
 def _calcular_area_privativa_tipo_total(texto: str) -> float:
-    """Soma area*qtd das unidades tipo; total do conjunto, nao area por pavimento."""
+    """Soma area*qtd das unidades tipo; total do conjunto (numerador da divisao por pavimento)."""
     return sum(
         area * qtd
         for area, qtd in _coletar_unidades(texto)
@@ -74,9 +74,11 @@ def _extrair_pavimento_tipo(texto: str) -> dict | None:
     qtd_tipo = _extrair_qtd_pavimentos_tipo(texto)
     if area_total <= 0 or qtd_tipo <= 0:
         return None
+    # Quadro I agrupa pavimentos repetidos: a planilha multiplica a area da linha por qtdPavimentos.
+    area_por_pavimento = round(area_total / qtd_tipo, 3)
     return _item_pavimento_quadro1(
         NOME_PAVIMENTOS_TIPO,
-        area_priv_cob_padrao=area_total,
+        area_priv_cob_padrao=area_por_pavimento,
         qtd_pavimentos=qtd_tipo,
     )
 

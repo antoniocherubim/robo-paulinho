@@ -238,6 +238,19 @@ por essa regra textual.
 
 Decisão classificada como **operacional/OCR**, não como critério técnico de engenharia civil.
 
+### Agrupamento de pavimentos repetidos no Quadro I
+
+O sistema agrupa pavimentos tipo idênticos em uma única linha do Quadro I.
+A área lançada na linha representa **um pavimento tipo individual**.
+A coluna `qtdPavimentos` representa quantas vezes esse pavimento se repete.
+Isso segue a lógica da própria planilha, que totaliza áreas com multiplicação por
+quantidade de pavimentos (`SUMPRODUCT`).
+A regra evita duplicação de área quando o texto OCR informa uma soma total dos
+pavimentos tipo.
+
+Status: **a validar com engenheiro civil**, especialmente quando houver torres,
+pavimentos tipo não idênticos ou áreas comuns distribuídas por pavimento.
+
 ## OCR com Tesseract
 
 Se o PDF nao tiver texto nativo, o pipeline tenta OCR com `pytesseract` + `pdf2image`.

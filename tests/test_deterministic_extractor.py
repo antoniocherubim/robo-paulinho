@@ -465,8 +465,23 @@ LOCAL DA OBRA: FAZENDA BOA VISTA, BAIRRO CENTRO
         pavs = dados["quadro1"]["pavimentos"]
         self.assertEqual(len(pavs), 1)
         self.assertEqual(pavs[0]["nome"], "Pavimentos tipo")
-        self.assertAlmostEqual(pavs[0]["areaPrivCobPadrao"], 20242.0)
+        self.assertAlmostEqual(pavs[0]["areaPrivCobPadrao"], 1012.1)
         self.assertEqual(pavs[0]["qtdPavimentos"], 20)
+        self.assertAlmostEqual(
+            pavs[0]["areaPrivCobPadrao"] * pavs[0]["qtdPavimentos"],
+            20242.0,
+        )
+
+    def test_quadro1_area_tipo_total_reconstituida_por_multiplicacao(self):
+        texto = """
+(1º AO 20º) PAV. TIPO - 66,02 X 160 APTOS
+(1º AO 20º) PAV. TIPO - 65,985 X 80 APTOS
+(1º AO 20º) PAV. TIPO - 55,00 X 80 APTOS
+"""
+        dados = extrair_dados_deterministico(texto)
+        item = dados["quadro1"]["pavimentos"][0]
+        total_reconstituido = item["areaPrivCobPadrao"] * item["qtdPavimentos"]
+        self.assertAlmostEqual(total_reconstituido, 20242.0, places=2)
 
     def test_quadro1_pavimento_tipo_nao_cria_sem_intervalo(self):
         texto = "66,02 X 160 APTOS"
