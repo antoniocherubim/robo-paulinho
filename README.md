@@ -142,6 +142,8 @@ Só importa quando `LLM_PROVIDER=auto` e **ambos** os providers estão disponív
 Detalhes de fallback: [docs/llm-fallback-policy.md](docs/llm-fallback-policy.md).  
 Seleção de provider: [docs/llm-provider-strategy.md](docs/llm-provider-strategy.md).
 
+A **matriz de responsabilidade por campo** ([docs/matriz_responsabilidade_campos.md](docs/matriz_responsabilidade_campos.md), código em `src/nbr12721/extraction/field_responsibility.py`) define quais paths a LLM poderá alterar nas próximas tasks (CNPJ, quantidades e quadros I/II permanecem bloqueados). Hoje é referência e documentação — o pipeline ainda não aplica `llm_pode_alterar()` automaticamente.
+
 ---
 
 ## Exemplos de `.env`
@@ -394,6 +396,7 @@ reduza `OCR_DPI` para `120`.
 
 | Documento | Conteúdo |
 |-----------|----------|
+| [docs/matriz_responsabilidade_campos.md](docs/matriz_responsabilidade_campos.md) | Origem por campo (determinístico, LLM, cálculo, etc.) |
 | [docs/llm-provider-strategy.md](docs/llm-provider-strategy.md) | `LLM_PROVIDER`, modos |
 | [docs/llm-fallback-policy.md](docs/llm-fallback-policy.md) | Ordem de tentativas em falha |
 | [docs/llm-response-contract.md](docs/llm-response-contract.md) | Formato `str \| None` |
@@ -408,6 +411,7 @@ reduza `OCR_DPI` para `120`.
 | `logging_setup.py` | Console + arquivo `logs/*.log` (rotação) |
 | `pipeline.py` | Orquestração do fluxo |
 | `config.py` | Paths, limites, resolvers de provider/modelo |
+| `field_responsibility.py` | Matriz origem/edição por campo (restrição LLM futura) |
 | `prompts.py` | Prompts LLM |
 | `llm.py` | Cliente multi-provider (`chamar_llm`) |
 | `pdf_processing.py` | Extração PDF, OCR, pré-filtragem |

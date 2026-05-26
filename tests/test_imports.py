@@ -13,6 +13,7 @@ class TestImports(unittest.TestCase):
             "nbr12721.extraction.prompts",
             "nbr12721.extraction.serialization",
             "nbr12721.extraction.validation",
+            "nbr12721.extraction.field_responsibility",
             "nbr12721.integrations",
             "nbr12721.integrations.cub",
             "nbr12721.integrations.llm",
