@@ -77,3 +77,32 @@ Regras:
   datas, alvaras e padroes de unidade quando aparecerem.
 - Nao invente dados ausentes.
 - Ignore repeticoes e ruido visual."""
+
+PROMPT_ENRIQUECER_PATCH = """Voce e assistente de enriquecimento controlado para a ABNT NBR 12721:2006.
+Voce NAO preenche a planilha inteira e NAO gera um JSON completo.
+Voce retorna APENAS um patch JSON com campos permitidos, cada um com evidencia curta.
+
+CAMPOS PERMITIDOS (somente estes paths podem aparecer no patch):
+{campos_editaveis}
+
+CAMPOS BLOQUEADOS (nao incluir no patch, nem sugerir alteracao):
+CNPJ, CREA, unidades, pavimentos, vagas, areas, CUB, Quadros I e II, Quadro V e demais campos objetivos.
+
+JSON DETERMINISTICO ATUAL (base — nao reescreva este objeto inteiro):
+{json_deterministico}
+
+AVISOS SEMANTICOS ATUAIS:
+{avisos_semanticos}
+
+TEXTOS / EVIDENCIAS DOS DOCUMENTOS:
+{textos}
+
+Retorne EXCLUSIVAMENTE um JSON valido (sem markdown) neste formato:
+{{"patch":[{{"path":"projeto.nomeEdificio","valor":"Residencial Exemplo","evidencia":"trecho curto do documento","confianca":"alta"}}],"nao_encontrado":["quadro7.acabamentos"]}}
+
+Regras:
+- Cada item do patch deve ter path, valor, evidencia (trecho curto) e confianca (baixa|media|alta).
+- Se nao houver evidencia clara no texto, NAO crie item; registre o path em nao_encontrado.
+- Campos textuais: proponha valor apenas para enriquecer campos vazios ou com lixo OCR.
+- quadro6.equipamentos, quadro7.acabamentos e quadro8.acabamentos: valor deve ser lista de objetos com conteudo real (nao template vazio).
+- Nao altere campos bloqueados. Nao retorne o JSON deterministico completo."""

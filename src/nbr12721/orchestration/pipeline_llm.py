@@ -11,7 +11,8 @@ from ..settings.config import (
     caminho_saida,
 )
 from ..documents.pdf_processing import dividir_lotes_documentos, separar_documentos
-from ..extraction.prompts import PROMPT_EXTRAIR, PROMPT_RESUMIR_LOTE
+from ..extraction.prompts import PROMPT_ENRIQUECER_PATCH, PROMPT_EXTRAIR, PROMPT_RESUMIR_LOTE
+from ..extraction.field_responsibility import campos_llm_editaveis
 from ..extraction.serialization import compactar_resumos, parsear_json
 from ..integrations.cub import formatar_cub_contexto
 from ..integrations.llm import chamar_llm
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "extrair_dados_via_llm",
     "extrair_evidencias_criticas",
+    "gerar_patch_llm",
     "tratar_erro_llm",
 ]
 
@@ -76,7 +78,29 @@ async def _resumir_lotes_documentos(textos):
 
 async def extrair_dados_via_llm(textos: str, cub_info: dict | None) -> dict:
     cub_ctx = formatar_cub_contexto(cub_info)
+    texto_resumido = await _preparar_texto_para_llm(textos)
 
+    prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
+        "{cub_contexto}", cub_ctx
+    )
+
+    logger.info("Enviando consolidacao final para o LLM...")
+    resposta = await chamar_llm(prompt_completo)
+
+    if not resposta:
+        raise RuntimeError("LLM nao disponivel")
+
+    logger.info("Processando resposta JSON...")
+    try:
+        return parsear_json(resposta)
+    except json.JSONDecodeError as e:
+        os.makedirs(PASTA_SAIDA, exist_ok=True)
+        with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
+            f.write(resposta)
+        raise RuntimeError(f"Erro JSON da LLM: {e}") from e
+
+
+async def _preparar_texto_para_llm(textos: str) -> str:
     resumos_lotes = await _resumir_lotes_documentos(textos)
     texto_resumido = compactar_resumos(resumos_lotes)
     evidencias_criticas = extrair_evidencias_criticas(textos)
@@ -98,25 +122,61 @@ async def extrair_dados_via_llm(textos: str, cub_info: dict | None) -> dict:
             LIMITE_CHARS_PROMPT_FINAL,
         )
         texto_resumido = texto_resumido[:LIMITE_CHARS_PROMPT_FINAL]
+    return texto_resumido
 
-    prompt_completo = PROMPT_EXTRAIR.replace("{textos}", texto_resumido).replace(
-        "{cub_contexto}", cub_ctx
+
+async def gerar_patch_llm(
+    dados_deterministicos: dict,
+    textos: str,
+    validacao: dict,
+) -> dict:
+    """Gera patch LLM v2; falha nao bloqueante retorna patch vazio."""
+    try:
+        texto_resumido = await _preparar_texto_para_llm(textos)
+    except RuntimeError as exc:
+        logger.warning("Patch LLM: falha ao preparar texto (%s)", exc)
+        return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
+
+    avisos = validacao.get("avisos_semanticos", [])
+    avisos_txt = "\n".join(f"- {a}" for a in avisos) if avisos else "(nenhum)"
+
+    prompt = (
+        PROMPT_ENRIQUECER_PATCH.replace(
+            "{json_deterministico}",
+            json.dumps(dados_deterministicos, ensure_ascii=False, indent=2),
+        )
+        .replace("{campos_editaveis}", "\n".join(f"- {p}" for p in campos_llm_editaveis()))
+        .replace("{avisos_semanticos}", avisos_txt)
+        .replace("{textos}", texto_resumido)
     )
 
-    logger.info("Enviando consolidacao final para o LLM...")
-    resposta = await chamar_llm(prompt_completo)
+    logger.info("Enviando prompt de patch LLM v2...")
+    try:
+        resposta = await chamar_llm(prompt)
+    except Exception as exc:
+        logger.warning("Patch LLM: falha ao chamar LLM (%s)", exc)
+        return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
 
     if not resposta:
-        raise RuntimeError("LLM nao disponivel")
+        logger.warning("Patch LLM: resposta vazia")
+        return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
 
-    logger.info("Processando resposta JSON...")
     try:
-        return parsear_json(resposta)
-    except json.JSONDecodeError as e:
+        parsed = parsear_json(resposta)
+    except json.JSONDecodeError as exc:
+        logger.warning("Patch LLM: JSON invalido (%s)", exc)
         os.makedirs(PASTA_SAIDA, exist_ok=True)
         with open(caminho_saida(ARQ_RESPOSTA_BRUTA), "w", encoding="utf-8") as f:
             f.write(resposta)
-        raise RuntimeError(f"Erro JSON da LLM: {e}") from e
+        return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
+
+    patch = parsed.get("patch", [])
+    nao_encontrado = parsed.get("nao_encontrado", [])
+    if not isinstance(patch, list):
+        patch = []
+    if not isinstance(nao_encontrado, list):
+        nao_encontrado = []
+    return {"patch": patch, "nao_encontrado": nao_encontrado}
 
 
 def tratar_erro_llm(e: RuntimeError) -> None:

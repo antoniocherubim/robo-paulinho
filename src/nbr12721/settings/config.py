@@ -96,6 +96,9 @@ ARQ_DADOS_DETERMINISTICO_JSON = "dados_deterministico.json"
 ARQ_VALIDACAO_DETERMINISTICO_JSON = "validacao_deterministico.json"
 ARQ_DADOS_LLM_JSON = "dados_llm.json"
 ARQ_VALIDACAO_LLM_JSON = "validacao_llm.json"
+ARQ_DADOS_HIBRIDO_JSON = "dados_hibrido.json"
+ARQ_VALIDACAO_HIBRIDO_JSON = "validacao_hibrido.json"
+ARQ_PATCH_LLM_JSON = "patch_llm.json"
 ARQ_COMPARACAO_MODOS_JSON = "comparacao_modos.json"
 
 # --- Validacao de completude do JSON ---

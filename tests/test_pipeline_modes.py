@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import tempfile
@@ -6,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from nbr12721.settings.config import VALIDACAO_BLOQUEANTE
-from nbr12721.orchestration.pipeline_llm import extrair_dados_via_llm
+from nbr12721.orchestration.pipeline_llm import extrair_dados_via_llm, gerar_patch_llm
 from nbr12721.orchestration.pipeline_compare import (
     executar_comparacao_modos,
     gerar_relatorio_comparacao,
@@ -21,9 +22,12 @@ from nbr12721.orchestration.pipeline_modes import (
 from nbr12721.settings.config import (
     ARQ_COMPARACAO_MODOS_JSON,
     ARQ_DADOS_DETERMINISTICO_JSON,
+    ARQ_DADOS_HIBRIDO_JSON,
     ARQ_DADOS_JSON,
     ARQ_DADOS_LLM_JSON,
+    ARQ_PATCH_LLM_JSON,
     ARQ_VALIDACAO_DETERMINISTICO_JSON,
+    ARQ_VALIDACAO_HIBRIDO_JSON,
 )
 from nbr12721.orchestration.pipeline_postprocess import (
     preencher_derivados_seguros,
@@ -120,7 +124,14 @@ class TestPipelineModes(unittest.TestCase):
 
     def test_comparacao_detecta_melhorias_llm(self):
         dados_det = {"incorporador": {"cnpj": ""}, "quadro6": {"equipamentos": []}}
-        dados_llm = {"incorporador": {"cnpj": "12.345.678/0001-90"}}
+        dados_llm = {
+            "incorporador": {"cnpj": "12.345.678/0001-90"},
+            "quadro6": {
+                "equipamentos": [
+                    {"nome": "Elevador", "tipo": "Social", "acabamento": "", "detalhes": ""}
+                ]
+            },
+        }
         val_det = {
             "ok": False,
             "score": 0.5,
@@ -183,6 +194,11 @@ class TestPipelineModes(unittest.TestCase):
                     return_value=dados_det,
                 ),
                 patch(
+                    "nbr12721.orchestration.pipeline_compare.gerar_patch_llm",
+                    new_callable=AsyncMock,
+                    return_value={"patch": [], "nao_encontrado": []},
+                ),
+                patch(
                     "nbr12721.orchestration.pipeline_compare.extrair_dados_via_llm",
                     new_callable=AsyncMock,
                     return_value=dados_llm,
@@ -203,9 +219,13 @@ class TestPipelineModes(unittest.TestCase):
             with open(path_principal, encoding="utf-8") as f:
                 self.assertEqual(f.read(), conteudo_original)
             self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_DADOS_DETERMINISTICO_JSON)))
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_DADOS_HIBRIDO_JSON)))
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_VALIDACAO_HIBRIDO_JSON)))
+            self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_PATCH_LLM_JSON)))
             self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_DADOS_LLM_JSON)))
             self.assertTrue(os.path.isfile(_caminho_comparacao(ARQ_COMPARACAO_MODOS_JSON)))
             self.assertIn("melhorias_llm", relatorio)
+            self.assertIn("hibrido", relatorio)
 
     def test_comparacao_dados_json_inclui_derivados_da_validacao(self):
         dados = _dados_minimos_validos()
@@ -223,6 +243,11 @@ class TestPipelineModes(unittest.TestCase):
                 patch(
                     "nbr12721.orchestration.pipeline_compare.extrair_dados_deterministico",
                     return_value=dados,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.gerar_patch_llm",
+                    new_callable=AsyncMock,
+                    return_value={"patch": [], "nao_encontrado": []},
                 ),
                 patch(
                     "nbr12721.orchestration.pipeline_compare.extrair_dados_via_llm",
@@ -408,6 +433,114 @@ class TestPipelineModes(unittest.TestCase):
     def test_usar_fallback_llm_por_constante(self):
         with patch("nbr12721.orchestration.pipeline_modes.FALLBACK_LLM_SE_INVALIDO", True):
             self.assertTrue(usar_fallback_llm(["prog"]))
+
+    def test_comparacao_hibrido_preserva_estrutura(self):
+        dados_det = _dados_minimos_validos()
+        dados_det["projeto"]["nomeEdificio"] = ", RESIDENCIAL BETA [memorial.pdf]"
+        patch_llm = {
+            "patch": [
+                {
+                    "path": "projeto.nomeEdificio",
+                    "valor": "RESIDENCIAL BETA",
+                    "evidencia": "memorial descreve o nome",
+                    "confianca": "alta",
+                }
+            ],
+            "nao_encontrado": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            comparacao_dir = os.path.join(tmpdir, "comparacao")
+
+            def _caminho_comparacao(nome: str) -> str:
+                return os.path.join(comparacao_dir, nome)
+
+            with (
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_deterministico",
+                    return_value=copy.deepcopy(dados_det),
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.gerar_patch_llm",
+                    new_callable=AsyncMock,
+                    return_value=patch_llm,
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.extrair_dados_via_llm",
+                    new_callable=AsyncMock,
+                    return_value=_dados_minimos_validos(),
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_compare.caminho_comparacao",
+                    side_effect=_caminho_comparacao,
+                ),
+            ):
+                asyncio.run(executar_comparacao_modos("texto filtrado", None))
+
+            with open(_caminho_comparacao(ARQ_DADOS_HIBRIDO_JSON), encoding="utf-8") as f:
+                hibrido = json.load(f)
+
+        self.assertEqual(hibrido["projeto"]["qtdUnidades"], dados_det["projeto"]["qtdUnidades"])
+        self.assertEqual(hibrido["quadro1"], dados_det["quadro1"])
+        self.assertEqual(hibrido["quadro2"], dados_det["quadro2"])
+        self.assertEqual(hibrido["projeto"]["nomeEdificio"], "RESIDENCIAL BETA")
+
+    def test_hibrido_nao_conta_melhoria_falsa_por_perda_estrutural(self):
+        dados_det = _dados_minimos_validos()
+        dados_hib = copy.deepcopy(dados_det)
+        dados_hib["projeto"]["qtdUnidades"] = 0
+        dados_hib["projeto"]["nomeEdificio"] = "Nome limpo via patch"
+
+        val_det = {
+            "ok": False,
+            "score": 0.7,
+            "criticos_faltantes": [],
+            "avisos_semanticos": ["projeto.nomeEdificio.lixo_ocr"],
+        }
+        val_hib = {
+            "ok": True,
+            "score": 0.95,
+            "criticos_faltantes": [],
+            "avisos_semanticos": [],
+        }
+
+        relatorio = gerar_relatorio_comparacao(
+            dados_det,
+            dados_det,
+            val_det,
+            val_det,
+            dados_hibrido=dados_hib,
+            val_hibrido=val_hib,
+        )
+        hib = relatorio["hibrido"]
+        self.assertIn("estrutural.perda:projeto.qtdUnidades", hib["regressoes"])
+        self.assertNotIn("projeto.nomeEdificio.lixo_ocr", hib["melhorias"])
+
+    def test_gerar_patch_llm_falha_nao_bloqueante(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch("nbr12721.orchestration.pipeline_llm.PASTA_SAIDA", tmpdir),
+                patch(
+                    "nbr12721.orchestration.pipeline_llm.caminho_saida",
+                    lambda nome: os.path.join(tmpdir, nome),
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_llm._preparar_texto_para_llm",
+                    new_callable=AsyncMock,
+                    return_value="TEXTO",
+                ),
+                patch(
+                    "nbr12721.orchestration.pipeline_llm.chamar_llm",
+                    new_callable=AsyncMock,
+                    side_effect=RuntimeError("LLM indisponivel"),
+                ),
+            ):
+                resultado = asyncio.run(
+                    gerar_patch_llm({}, "texto", {"avisos_semanticos": []})
+                )
+
+        self.assertEqual(resultado["patch"], [])
+        self.assertEqual(resultado["nao_encontrado"], ["llm_indisponivel"])
 
     def test_extrair_dados_via_llm_parseia_json(self):
         json_llm = '{"incorporador":{"cnpj":"10.910.748/0001-85"}}'

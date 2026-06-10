@@ -81,15 +81,45 @@ Campos em que o template já calcula totais ou derivados — o Python deve **ape
 
 Inventário completo: [docs/inventario_formulas_xlsx.md](inventario_formulas_xlsx.md) (1301 fórmulas no template). O writer tabular preserva células com fórmula via `celula_tem_formula` em `_escrever_dataframe`. Células fixas do Quadro III ainda não têm guard explícito.
 
-### 4.4 LLM controlada
+### 4.4 LLM controlada (patch v2)
 
-Enriquecimento textual permitido **somente** nos campos com `llm_pode_alterar=True` na matriz:
+A LLM **não** preenche a planilha inteira. No modo híbrido (`--comparar-modos`), ela recebe o JSON determinístico pós-processado e devolve apenas um **patch** JSON:
+
+```json
+{
+  "patch": [
+    {
+      "path": "projeto.nomeEdificio",
+      "valor": "Residencial Exemplo",
+      "evidencia": "trecho curto do documento",
+      "confianca": "alta"
+    }
+  ],
+  "nao_encontrado": ["quadro7.acabamentos"]
+}
+```
+
+Campos permitidos (`campos_llm_editaveis()` / `llm_pode_alterar=True`):
+
+- `incorporador.nome`, `responsavel.nome`, `responsavel.endereco`
+- `projeto.nomeEdificio`, `projeto.localConstrucao`
+- `quadro6.equipamentos`, `quadro7.acabamentos`, `quadro8.acabamentos`
+
+Regras inegociáveis:
+
+- Evidência obrigatória por item; sem evidência clara → `nao_encontrado`, não inventar.
+- Campos bloqueados (CNPJ, CREA, unidades, pavimentos, vagas, áreas, CUB, Quadros I/II/V) **não** entram no prompt como editáveis.
+- Quadros VI–VIII: lista não vazia com objetos de conteúdo real (template vazio é rejeitado).
+- Campos textuais: patch só substitui vazio ou lixo OCR (`,`, `[*.pdf]`, `FICARA CONDIC`).
+- O híbrido preserva `qtdUnidades`, `quadro1`, `quadro2`, CUB e derivados do determinístico.
+
+Metadados de debug em `dados_hibrido.json`: `_patch_llm_aplicado`, `_patch_llm_rejeitado` (path + motivo).
+
+Enriquecimento textual típico:
 
 - Nome do edifício/incorporador/responsável quando o OCR vier com lixo (aviso `*.lixo_ocr`).
 - Endereço textual limpo (responsável; local da construção).
 - Quadros VI, VII e VIII — descrição de equipamentos e acabamentos a partir do memorial.
-
-Regra inegociável: a LLM **nunca** altera campos objetivos travados (`llm_pode_alterar(path) == False`), incluindo CNPJ, áreas, quantidades, CUB e Quadros I/II.
 
 ### 4.5 Revisão manual / engenharia civil
 
@@ -120,11 +150,11 @@ Regra inegociável: a LLM **nunca** altera campos objetivos travados (`llm_pode_
 | `extraction/validation.py` | Críticos/avisos, consistência área×pavimentos, lixo OCR, templates vazios | Não valida coeficiente de proporcionalidade nem soma de colunas do Quadro I/II |
 | `outputs/excel_writer.py` | Preenche Info preliminares, Q1–Q3, Q4-B/B.1, Q5–VIII; protege fórmulas tabulares | Quadro IV-A ausente; células fixas Q3 sem guard de fórmula |
 | `outputs/excel_audit.py` | Compara JSON × células preenchidas pós-escrita | Não audita células calculadas por fórmula (valores derivados) |
-| `extraction/prompts.py` | Prompt de extração completa (JSON inteiro) | Sem restrição da matriz — LLM ainda pode sobrescrever campos objetivos (Task de prompt v2) |
+| `extraction/prompts.py` | Prompt de extração completa (legado) + `PROMPT_ENRIQUECER_PATCH` (patch v2) | Legado ainda gera JSON inteiro; híbrido usa patch controlado |
 
 ## 7. Próximas tasks sugeridas
 
-1. **Prompt LLM v2 como patch controlado** — LLM devolve apenas campos permitidos pela matriz (`llm_pode_alterar`), aplicados como patch sobre o resultado determinístico.
+1. ~~**Prompt LLM v2 como patch controlado**~~ — concluído; ver `llm_patch.py`, `gerar_patch_llm`, artefatos `dados_hibrido.json` / `patch_llm.json`.
 2. ~~**Inventário de fórmulas no XLSX**~~ — concluído; ver [inventario_formulas_xlsx.md](inventario_formulas_xlsx.md).
 3. **Mapear Quadro III com norma + template** — alinhar adicionais 6.3.2-b (fundações, elevadores etc.) com as linhas reais da planilha.
 4. **Revisar CUB e padrão do projeto** — validar a heurística por pavimentos contra os projetos-padrão do anexo C, com participação de engenharia.

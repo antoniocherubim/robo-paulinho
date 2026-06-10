@@ -53,6 +53,8 @@ python3 main.py --usar-texto-filtrado-cache
 
 Compare os dois modos de extração no **mesmo** `textos_filtrados.txt`, sem re-OCR e **sem** sobrescrever `dados_extraidos.json`, a planilha principal nem `validacao_dados.json`. Artefatos ficam em `data/output/saida/comparacao/`.
 
+O fluxo híbrido (LLM v2) parte do JSON **determinístico já pós-processado** (CUB, derivados seguros, `quadro5.garagens`) e aplica apenas um **patch controlado** nos campos permitidos pela matriz (`llm_pode_alterar`). A LLM não gera JSON inteiro: devolve `patch` + `evidencia` por item. Falha da LLM no modo comparação é **não bloqueante** (`patch: []`, `nao_encontrado: ["llm_indisponivel"]`).
+
 ```bash
 # 1) Gerar textos_filtrados.txt uma vez (pipeline normal com OCR)
 PYTHONPATH=src ./venv/bin/python main.py --deterministico --json-only
@@ -61,7 +63,18 @@ PYTHONPATH=src ./venv/bin/python main.py --deterministico --json-only
 PYTHONPATH=src ./venv/bin/python main.py --comparar-modos --usar-texto-filtrado-cache
 ```
 
-O relatório `comparacao_modos.json` lista `melhorias_llm`, `regressoes_llm` e `campos_diferentes`. A decisão final entre modos é de revisão humana/engenharia, não automática.
+Artefatos em `comparacao/`:
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `dados_deterministico.json` | Extração determinística + pós-processamento |
+| `dados_hibrido.json` | Determinístico + patch LLM aplicado |
+| `validacao_hibrido.json` | Validação do híbrido |
+| `patch_llm.json` | Patch bruto (`patch`, `nao_encontrado`) |
+| `dados_llm.json` | Modo legado (JSON inteiro via LLM), opcional |
+| `comparacao_modos.json` | Relatório com seções `llm` e `hibrido` |
+
+O relatório lista `melhorias_llm` / `regressoes_llm` (legado) e, para o híbrido, `hibrido.melhorias` / `hibrido.regressoes` comparados sempre contra o determinístico. Remoção de aviso semântico **não** conta como melhoria se houve perda de dado estrutural (`qtdUnidades`, Quadros I–II, CUB, garagens etc.). A decisão final entre modos é de revisão humana/engenharia, não automática.
 
 Artefatos gerados em `data/output/saida/` (`NBR_12721_preenchida.xlsx`, `dados_extraidos.json`, etc.).
 
