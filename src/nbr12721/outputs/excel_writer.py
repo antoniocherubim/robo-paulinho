@@ -24,6 +24,7 @@ from .excel_mapping import (
     obter_valor_path,
     resolver_celula,
 )
+from .excel_formula_inventory import celula_tem_formula
 from .excel_tables import tabela_quadro1, tabela_quadro2, tabela_quadro6, tabela_quadro7, tabela_quadro8
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ def _numero(valor) -> float:
         return float(valor) if valor else 0.0
     except (TypeError, ValueError):
         return 0.0
+
+
+def _celula_protegida_formula(ws, row: int, col: int) -> bool:
+    return celula_tem_formula(ws.cell(row, col).value)
 
 
 def _escrever_dataframe(
@@ -53,6 +58,15 @@ def _escrever_dataframe(
         r = start_row + escritas
         for col_name, excel_col in col_map.items():
             if col_name not in row.index:
+                continue
+            if _celula_protegida_formula(ws, r, excel_col):
+                celula = ws.cell(r, excel_col)
+                logger.debug(
+                    "Formula preservada: aba=%s celula=%s campo=%s",
+                    ws.title,
+                    celula.coordinate,
+                    col_name,
+                )
                 continue
             valor = row[col_name]
             if isinstance(valor, float) and col_name != "nome" and col_name != "designacao":

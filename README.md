@@ -396,10 +396,16 @@ reduza `OCR_DPI` para `120`.
 
 | Documento | Conteúdo |
 |-----------|----------|
+| [docs/inventario_formulas_xlsx.md](docs/inventario_formulas_xlsx.md) | Inventário de fórmulas do template XLSX |
+| [docs/guia_preenchimento_nbr12721.md](docs/guia_preenchimento_nbr12721.md) | Guia operacional de preenchimento baseado na NBR 12721 |
 | [docs/matriz_responsabilidade_campos.md](docs/matriz_responsabilidade_campos.md) | Origem por campo (determinístico, LLM, cálculo, etc.) |
 | [docs/llm-provider-strategy.md](docs/llm-provider-strategy.md) | `LLM_PROVIDER`, modos |
 | [docs/llm-fallback-policy.md](docs/llm-fallback-policy.md) | Ordem de tentativas em falha |
 | [docs/llm-response-contract.md](docs/llm-response-contract.md) | Formato `str \| None` |
+
+A norma ABNT NBR 12721:2006 é usada apenas como **referência local** (PDF na raiz, não versionado na íntegra por direitos autorais). O guia de preenchimento é interpretação operacional e **não substitui validação de engenheiro civil**.
+
+O writer preserva fórmulas existentes em células tabulares (Quadros I, II, IV-B, IV-B.1, VI–VIII): células cujo valor começa com `=` não são sobrescritas. Ver [docs/inventario_formulas_xlsx.md](docs/inventario_formulas_xlsx.md).
 
 ---
 
@@ -420,6 +426,7 @@ reduza `OCR_DPI` para `120`.
 | `excel_tables.py` | DataFrames intermediários por quadro |
 | `excel_mapping.py` | Mapeamento JSON → células do template |
 | `excel_writer.py` | Orquestração do preenchimento (pandas + openpyxl) |
+| `excel_formula_inventory.py` | Inventário de fórmulas do template; proteção tabular |
 | `excel_audit.py` | Auditoria JSON vs células do XLSX preenchido |
 | `formatacao.py` | Formatação BRL |
 

@@ -24,6 +24,7 @@ class TestImports(unittest.TestCase):
             "nbr12721.orchestration.pipeline_postprocess",
             "nbr12721.outputs",
             "nbr12721.outputs.excel_writer",
+            "nbr12721.outputs.excel_formula_inventory",
             "nbr12721.outputs.formatacao",
             "nbr12721.settings",
             "nbr12721.settings.config",
