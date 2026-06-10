@@ -10,7 +10,11 @@ from ..settings.config import (
     PASTA_SAIDA,
     caminho_saida,
 )
-from ..documents.pdf_processing import dividir_lotes_documentos, separar_documentos
+from ..documents.pdf_processing import (
+    dividir_lotes_documentos,
+    extrair_evidencias_acabamentos_equipamentos,
+    separar_documentos,
+)
 from ..extraction.prompts import PROMPT_ENRIQUECER_PATCH, PROMPT_EXTRAIR, PROMPT_RESUMIR_LOTE
 from ..extraction.field_responsibility import campos_llm_editaveis
 from ..extraction.serialization import compactar_resumos, parsear_json
@@ -55,6 +59,25 @@ def extrair_evidencias_criticas(textos, limite_chars=12000):
     if corte < limite_chars * 0.7:
         corte = limite_chars
     return evidencias[:corte].rstrip()
+
+
+def _anexar_evidencias_patch(
+    texto_resumido: str,
+    evidencias: str,
+    limite_chars: int = LIMITE_CHARS_PROMPT_FINAL,
+) -> str:
+    """Anexa bloco de evidencias ao prompt de patch; preserva o bloco se truncar."""
+    if not evidencias or not evidencias.strip():
+        return texto_resumido
+    bloco = evidencias.strip()
+    combinado = f"{texto_resumido}\n\n{bloco}"
+    if len(combinado) <= limite_chars:
+        return combinado
+    reserva = len(bloco) + 2
+    if reserva >= limite_chars:
+        return bloco[:limite_chars]
+    cabeca_max = limite_chars - reserva
+    return f"{texto_resumido[:cabeca_max].rstrip()}\n\n{bloco}"
 
 
 async def _resumir_lotes_documentos(textos):
@@ -136,6 +159,9 @@ async def gerar_patch_llm(
     except RuntimeError as exc:
         logger.warning("Patch LLM: falha ao preparar texto (%s)", exc)
         return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
+
+    evidencias_vi_viii = extrair_evidencias_acabamentos_equipamentos(textos)
+    texto_resumido = _anexar_evidencias_patch(texto_resumido, evidencias_vi_viii)
 
     avisos = validacao.get("avisos_semanticos", [])
     avisos_txt = "\n".join(f"- {a}" for a in avisos) if avisos else "(nenhum)"

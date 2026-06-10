@@ -44,6 +44,27 @@ CURITIBA-PR 24/07/2023
         filtrado = prefiltrar_texto(texto, verbose=False)
         self.assertIn("CNPJ10.910.7480001-85", filtrado)
 
+    def test_extrai_evidencias_acabamentos_equipamentos(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_EVIDENCIAS_VI_VIII,
+            extrair_evidencias_acabamentos_equipamentos,
+        )
+
+        texto = """
+DOCUMENTO: memorial.pdf
+ELEVADOR01 ELEVADOR02
+HALL SOCIAL GOURMET
+PISO CIMENTADO
+JANELA ALUMINIO ACABAMENTOS COR GRAFITE
+240x480 240x480 JANELA PORTA
+"""
+        resultado = extrair_evidencias_acabamentos_equipamentos(texto)
+        self.assertIn(MARCADOR_EVIDENCIAS_VI_VIII, resultado)
+        self.assertIn("ELEVADOR", resultado)
+        self.assertIn("HALL", resultado)
+        self.assertIn("PISO", resultado)
+        self.assertIn("GRAFITE", resultado)
+
 
 class TestOcrRegional(unittest.TestCase):
     def _imagem_fake(self, largura=1000, altura=800):

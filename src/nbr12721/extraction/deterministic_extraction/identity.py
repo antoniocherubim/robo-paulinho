@@ -34,6 +34,7 @@ from .patterns import (
     RE_TEL,
 )
 from .utils import (
+    _limpar_prefixo_ocr_empresa,
     _limpar_ruido_ocr_textual,
     _limpar_texto_campo,
     _normalizar_linha_ocr,
@@ -118,6 +119,7 @@ def _limpar_prefixo_ocr_nome(valor: str) -> str:
 def _limpar_nome_incorporador(valor: str) -> str:
     nome = _cortar_nome_incorporador(valor)
     nome = _limpar_prefixo_ocr_nome(nome)
+    nome = _limpar_prefixo_ocr_empresa(nome)
     nome = re.sub(r"\s+\d{10,}.*$", "", nome).strip()
     return _limpar_ruido_ocr_textual(nome)
 

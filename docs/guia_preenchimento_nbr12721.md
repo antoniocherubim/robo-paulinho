@@ -76,6 +76,7 @@ Valores derivados de outros campos do próprio JSON, sem inventar dado externo:
 - CNPJ: priorizar ocorrências rotuladas (`CNPJ` na mesma linha), inclusive sem barra entre blocos (`CNPJ10.910.7480001-85`); ignorar sequências numéricas soltas quando houver CNPJ rotulado.
 - `projeto.cidadeUf`: extrair o último trecho cidade-UF válido da linha; remover prefixos OCR curtos (`Acd`, `(aga`) sem cortar cidades compostas (`São Paulo`, `Belo Horizonte`, `Foz do Iguaçu`).
 - `projeto.nomeEdificio`: preencher **somente** com rótulo explícito (`NOME DO EDIFÍCIO`, `EMPREENDIMENTO`). A tipologia `EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]` **não** é nome comercial do edifício — vai para `quadro3.projetoPadrao.designacao`, não para `nomeEdificio`.
+- `incorporador.nome`: remover prefixo OCR lexical genérico (`estar ie que`, tokens curtos) quando houver termo jurídico (LTDA, INCORPORAÇÃO etc.) — sem hardcode de razões sociais específicas.
 - Campos textuais: remover prefixo conservador `[arquivo.pdf]` no início; não remover `[RMV]` ou outros colchetes no meio da string.
 
 ### 4.3 Fórmula Excel
@@ -116,7 +117,8 @@ Regras inegociáveis:
 
 - Evidência obrigatória por item; sem evidência clara → `nao_encontrado`, não inventar.
 - Campos bloqueados (CNPJ, CREA, unidades, pavimentos, vagas, áreas, CUB, Quadros I/II/V) **não** entram no prompt como editáveis.
-- Quadros VI–VIII: lista não vazia com objetos de conteúdo real (template vazio é rejeitado).
+- Quadros VI–VIII: lista não vazia com objetos de conteúdo real (template vazio é rejeitado); lista vazia e `evidencia: "template vazio"` são proibidas no patch.
+- Patch LLM recebe bloco dedicado `EVIDENCIAS QUADROS VI-VIII` (equipamentos/acabamentos); VI–VIII ainda não são preenchidos deterministicamente.
 - Campos textuais: patch só substitui vazio ou lixo OCR (`,`, `[*.pdf]`, `FICARA CONDIC`).
 - O híbrido preserva `qtdUnidades`, `quadro1`, `quadro2`, CUB e derivados do determinístico.
 

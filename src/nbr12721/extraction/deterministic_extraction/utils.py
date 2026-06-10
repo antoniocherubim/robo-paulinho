@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from .patterns import RE_PREFIXO_ARQUIVO_PDF
+from .patterns import RE_EMPRESA_JURIDICA, RE_PREFIXO_ARQUIVO_PDF
 
 _UFS_BRASIL = frozenset(
     {
@@ -55,6 +55,14 @@ _SUFIXOS_PRESERVADOS = frozenset(
 
 _RE_BORDA_INICIO_SIMBOLOS = re.compile(r"^[\s|*_\-.–—,;:]+")
 _RE_VIRGULAS_REPETIDAS = re.compile(r",\s*,+")
+_LIXO_OCR_EMPRESA = frozenset(
+    {"estar", "nestas", "nesta", "neste", "que", "para", "com", "sem"}
+)
+_RE_TERMO_JURIDICO_SOMENTE = re.compile(
+    r"^(?:LTDA|S/?A\.?|SA|EIRELI|SPE|INCORPORA[CÇ][AÃ]O|CONSTRU[CÇ][AÃ]O|"
+    r"EMPREENDIMENTOS)$",
+    re.IGNORECASE,
+)
 
 
 def _parse_numero_br(valor: str) -> float:
@@ -168,6 +176,66 @@ def _remover_segmentos_finais_ruido(texto: str) -> str:
 def _remover_prefixo_arquivo_pdf(valor: str) -> str:
     """Remove prefixo conservador [arquivo.pdf] no inicio da string."""
     return RE_PREFIXO_ARQUIVO_PDF.sub("", valor)
+
+
+def _token_e_lixo_ocr_empresa(token: str) -> bool:
+    nucleo = re.sub(r"[^\wÀ-ÿ]", "", token, flags=re.IGNORECASE)
+    if not nucleo:
+        return True
+    if nucleo.lower() in _LIXO_OCR_EMPRESA:
+        return True
+    if len(nucleo) <= 3 and nucleo.isascii() and nucleo.islower():
+        return True
+    if len(nucleo) <= 1:
+        return True
+    return False
+
+
+def _token_empresarial(token: str) -> bool:
+    nucleo = re.sub(r"[^\wÀ-ÿ/]", "", token, flags=re.IGNORECASE)
+    if not nucleo or len(nucleo) < 2:
+        return False
+    if nucleo.lower() in _LIXO_OCR_EMPRESA:
+        return False
+    if _RE_TERMO_JURIDICO_SOMENTE.match(nucleo):
+        return False
+    letras = [c for c in nucleo if c.isalpha()]
+    if len(letras) < 2:
+        return False
+    if len(letras) >= 4:
+        if nucleo.isascii() and nucleo.islower():
+            return False
+        return True
+    maiusculas = sum(1 for c in letras if c.isupper())
+    return maiusculas >= len(letras) * 0.6
+
+
+def _limpar_prefixo_ocr_empresa(nome: str) -> str:
+    """
+    Remove prefixo OCR lexical antes de razao social com termo juridico.
+    Conservador: so altera quando prefixo e lixo claro e segmento empresarial valido.
+    """
+    nome = _limpar_texto_campo(nome)
+    if not nome or not RE_EMPRESA_JURIDICA.search(nome):
+        return nome
+
+    tokens = nome.split()
+    if len(tokens) < 2:
+        return nome
+
+    idx_empresa = next(
+        (i for i, t in enumerate(tokens) if _token_empresarial(t)),
+        len(tokens),
+    )
+    if idx_empresa == 0:
+        return nome
+    if not all(_token_e_lixo_ocr_empresa(t) for t in tokens[:idx_empresa]):
+        return nome
+
+    restante = " ".join(tokens[idx_empresa:])
+    if RE_EMPRESA_JURIDICA.search(restante):
+        return restante
+    return nome
 
 
 def _limpar_ruido_ocr_textual(valor: str) -> str:

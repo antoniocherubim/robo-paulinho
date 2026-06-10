@@ -105,4 +105,15 @@ Regras:
 - Se nao houver evidencia clara no texto, NAO crie item; registre o path em nao_encontrado.
 - Campos textuais: proponha valor apenas para enriquecer campos vazios ou com lixo OCR.
 - quadro6.equipamentos, quadro7.acabamentos e quadro8.acabamentos: valor deve ser lista de objetos com conteudo real (nao template vazio).
-- Nao altere campos bloqueados. Nao retorne o JSON deterministico completo."""
+- Lista vazia e proibida: nunca retorne "valor": [] em nenhum item do patch.
+- evidencia "template vazio" e invalida; cite trecho literal do documento.
+- Nao altere campos bloqueados. Nao retorne o JSON deterministico completo.
+
+Regras Quadros VI-VIII:
+- quadro6.equipamentos: inclua apenas equipamentos citados (elevador, bomba, gas, pressurizacao, barrilete, reservatorio). Campos tipo/acabamento vazios se ausentes no texto. Palavra solta ELEVADOR pode virar item com confianca baixa ou media, sem inventar tipo.
+- quadro7.acabamentos: acabamentos de areas privativas; exige dependencia + material (pisos, paredes, tetos ou outros).
+- quadro8.acabamentos: acabamentos de areas comuns; mesma regra de dependencia + material.
+- Se nao houver dependencia e material, registre em nao_encontrado em vez de enviar lista vazia.
+
+Exemplo permitido para quadro6:
+{{"path":"quadro6.equipamentos","valor":[{{"nome":"Elevador","tipo":"","acabamento":"","detalhes":"ELEVADOR01/ELEVADOR02/ELEVADOR03 citados"}}],"evidencia":"ELEVADOR01 ELEVADOR02 ELEVADOR03","confianca":"media"}}"""

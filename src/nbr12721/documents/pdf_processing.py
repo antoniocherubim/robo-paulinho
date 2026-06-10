@@ -30,8 +30,10 @@ from ..settings.config import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "extrair_evidencias_acabamentos_equipamentos",
     "extrair_texto_pdf",
     "iterar_texto_pdf_paginas",
+    "MARCADOR_EVIDENCIAS_VI_VIII",
     "normalizar_ocr",
     "prefiltrar_texto",
     "separar_documentos",
@@ -630,6 +632,73 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
     candidatos.sort(key=lambda item: (-item[0], item[1]))
     evidencias = [item for _, _, item in candidatos[:limite_linhas]]
     return "\n".join(evidencias)
+
+
+MARCADOR_EVIDENCIAS_VI_VIII = "EVIDENCIAS QUADROS VI-VIII:"
+
+_PADRAO_VI_VIII = re.compile(
+    r"\b(?:ELEVADOR\w*|BOMBA|PRESSUR|DUTO|ESCADA|BARRILETE|RESERVAT|"
+    r"GÁS|GAS|MEDIDOR|"
+    r"HALL|HALLSOCIAL|HALL\s+SOCIAL|GOURMET|SACADA|CIRC|DML|LAZER|"
+    r"PISO|PAREDE|TETO|PINTURA|PORCELANATO|CERÂMICA|CERAMICA|CIMENTADO|"
+    r"GRAFITE|ALUMÍNIO|ALUMINIO|VIDRO|MADEIRA|PORTA|JANELA|ACABAMENTO)\b",
+    re.IGNORECASE,
+)
+
+
+def _linha_ocr_ruim(linha: str) -> bool:
+    if len(linha) <= 24 and _PADRAO_VI_VIII.search(linha):
+        return False
+    palavras_longas = re.findall(r"\b[a-zA-ZÀ-ü]{4,}\b", linha)
+    if len(palavras_longas) >= 2:
+        return False
+    nao_alfa = len(re.sub(r"[a-zA-ZÀ-ü\s]", "", linha))
+    return nao_alfa / max(len(linha), 1) > 0.55
+
+
+def extrair_evidencias_acabamentos_equipamentos(textos: str, limite_linhas: int = 80) -> str:
+    """Seleciona linhas uteis para Quadros VI-VIII (patch LLM v2)."""
+    doc_atual = ""
+    candidatos: list[tuple[int, str]] = []
+    vistos: set[str] = set()
+    ordem = 0
+
+    for linha in textos.splitlines():
+        ordem += 1
+        linha = re.sub(r"[ \t]+", " ", linha.strip())
+        if not linha:
+            continue
+
+        m_doc = re.match(r"DOCUMENTO:\s*(.+)$", linha, re.IGNORECASE)
+        if m_doc:
+            doc_atual = m_doc.group(1).strip()
+            continue
+
+        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII):
+            continue
+        if not _PADRAO_VI_VIII.search(linha):
+            continue
+        if _linha_ocr_ruim(linha):
+            continue
+
+        linha = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
+        if len(linha) > 320:
+            linha = linha[:317].rstrip() + "..."
+
+        item = f"[{doc_atual}] {linha}" if doc_atual else linha
+        chave = re.sub(r"\d+", "#", item.lower())
+        chave = re.sub(r"\s+", " ", chave).strip()
+        if chave in vistos:
+            continue
+
+        vistos.add(chave)
+        candidatos.append((ordem, item))
+
+    if not candidatos:
+        return ""
+
+    linhas = [item for _, item in candidatos[:limite_linhas]]
+    return f"{MARCADOR_EVIDENCIAS_VI_VIII}\n" + "\n".join(linhas)
 
 
 def _combinar_evidencias_e_corpo(evidencias, corpo, limite_chars):

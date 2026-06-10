@@ -299,6 +299,22 @@ CNPJ 12.345.678/0001-90
             "ACME INCORPORAÇÃO LTDA",
         )
 
+    def test_limpa_prefixo_ocr_nome_empresa_juridica(self):
+        texto = "PROPRIETÁRIO: estar ie que ACME CONSTRUÇÃO E INCORPORAÇÃO LTDA"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["incorporador"]["nome"],
+            "ACME CONSTRUÇÃO E INCORPORAÇÃO LTDA",
+        )
+
+    def test_preserva_nome_empresa_sem_prefixo(self):
+        texto = "PROPRIETÁRIO: CONSTRUTORA BOA VISTA LTDA"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(
+            dados["incorporador"]["nome"],
+            "CONSTRUTORA BOA VISTA LTDA",
+        )
+
     def test_limpa_prefixo_numerico_responsavel(self):
         texto = """
 4 MARIA DE SOUZA PEREIRA
