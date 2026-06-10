@@ -47,6 +47,8 @@ CURITIBA-PR 24/07/2023
     def test_extrai_evidencias_acabamentos_equipamentos(self):
         from nbr12721.documents.pdf_processing import (
             MARCADOR_EVIDENCIAS_VI_VIII,
+            MARCADOR_QUADRO_VI,
+            MARCADOR_QUADRO_VIII,
             extrair_evidencias_acabamentos_equipamentos,
         )
 
@@ -60,10 +62,70 @@ JANELA ALUMINIO ACABAMENTOS COR GRAFITE
 """
         resultado = extrair_evidencias_acabamentos_equipamentos(texto)
         self.assertIn(MARCADOR_EVIDENCIAS_VI_VIII, resultado)
+        self.assertIn(MARCADOR_QUADRO_VI, resultado)
+        self.assertIn(MARCADOR_QUADRO_VIII, resultado)
         self.assertIn("ELEVADOR", resultado)
         self.assertIn("HALL", resultado)
-        self.assertIn("PISO", resultado)
-        self.assertIn("GRAFITE", resultado)
+
+    def test_evidencias_vi_viii_separa_privativo_e_comum(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_QUADRO_VII,
+            MARCADOR_QUADRO_VIII,
+            extrair_evidencias_acabamentos_equipamentos,
+        )
+
+        texto = """
+APTO01 SALA PISO PORCELANATO PAREDE PINTURA
+SACADA PISO CERAMICA
+HALL ELEV. PISO PORCELANATO
+ESCADA PISO CIMENTADO
+"""
+        resultado = extrair_evidencias_acabamentos_equipamentos(texto)
+        sec_vii = resultado.split(MARCADOR_QUADRO_VII)[1].split(MARCADOR_QUADRO_VIII)[0]
+        sec_viii = resultado.split(MARCADOR_QUADRO_VIII)[1]
+        self.assertIn("APTO01", sec_vii)
+        self.assertIn("SACADA", sec_vii)
+        self.assertNotIn("HALL ELEV", sec_vii)
+        self.assertIn("HALL ELEV", sec_viii)
+        self.assertIn("ESCADA", sec_viii)
+        self.assertNotIn("APTO01", sec_viii)
+
+    def test_evidencias_vi_viii_classifica_elevador_como_quadro6(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_QUADRO_VI,
+            MARCADOR_QUADRO_VIII,
+            extrair_evidencias_acabamentos_equipamentos,
+        )
+
+        texto = """
+ELEVADOR01 ELEVADOR02
+HALL ELEV. PISO PORCELANATO
+"""
+        resultado = extrair_evidencias_acabamentos_equipamentos(texto)
+        sec_vi = resultado.split(MARCADOR_QUADRO_VI)[1].split(MARCADOR_QUADRO_VIII)[0]
+        sec_viii = resultado.split(MARCADOR_QUADRO_VIII)[1]
+        self.assertIn("ELEVADOR01", sec_vi)
+        self.assertNotIn("HALL ELEV", sec_vi)
+        self.assertIn("HALL ELEV", sec_viii)
+        self.assertNotIn("ELEVADOR01", sec_viii)
+
+    def test_evidencias_vi_viii_hall_elevador_por_extenso_vai_para_viii(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_QUADRO_VI,
+            MARCADOR_QUADRO_VIII,
+            extrair_evidencias_acabamentos_equipamentos,
+        )
+
+        texto = """
+HALL ELEVADOR PISO PORCELANATO
+ELEVADOR01 ELEVADOR02
+"""
+        resultado = extrair_evidencias_acabamentos_equipamentos(texto)
+        sec_vi = resultado.split(MARCADOR_QUADRO_VI)[1].split(MARCADOR_QUADRO_VIII)[0]
+        sec_viii = resultado.split(MARCADOR_QUADRO_VIII)[1]
+        self.assertIn("HALL ELEVADOR", sec_viii)
+        self.assertNotIn("HALL ELEVADOR", sec_vi)
+        self.assertIn("ELEVADOR01", sec_vi)
 
 
 class TestOcrRegional(unittest.TestCase):

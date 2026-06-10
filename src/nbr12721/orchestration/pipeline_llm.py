@@ -11,9 +11,19 @@ from ..settings.config import (
     caminho_saida,
 )
 from ..documents.pdf_processing import (
+    MARCADOR_EVIDENCIAS_VI_VIII,
+    MARCADOR_QUADRO_VI,
+    MARCADOR_QUADRO_VII,
+    MARCADOR_QUADRO_VIII,
     dividir_lotes_documentos,
     extrair_evidencias_acabamentos_equipamentos,
     separar_documentos,
+)
+
+_MARCADORES_SUBSECAO_ORDEM = (
+    MARCADOR_QUADRO_VI,
+    MARCADOR_QUADRO_VII,
+    MARCADOR_QUADRO_VIII,
 )
 from ..extraction.prompts import PROMPT_ENRIQUECER_PATCH, PROMPT_EXTRAIR, PROMPT_RESUMIR_LOTE
 from ..extraction.field_responsibility import campos_llm_editaveis
@@ -61,21 +71,91 @@ def extrair_evidencias_criticas(textos, limite_chars=12000):
     return evidencias[:corte].rstrip()
 
 
+def _parse_bloco_vi_viii(bloco: str) -> tuple[list[str], dict[str, list[str]]]:
+    """Retorna marcadores de subsecao presentes (ordem) e linhas por marcador."""
+    marcadores_presentes: list[str] = []
+    linhas_por_marcador: dict[str, list[str]] = {}
+    marcador_atual: str | None = None
+
+    for linha in bloco.splitlines():
+        texto = linha.strip()
+        if not texto or texto == MARCADOR_EVIDENCIAS_VI_VIII:
+            continue
+        if texto in _MARCADORES_SUBSECAO_ORDEM:
+            marcador_atual = texto
+            if marcador_atual not in marcadores_presentes:
+                marcadores_presentes.append(marcador_atual)
+                linhas_por_marcador[marcador_atual] = []
+            continue
+        if marcador_atual is not None:
+            linhas_por_marcador[marcador_atual].append(linha)
+
+    return marcadores_presentes, linhas_por_marcador
+
+
+def _reconstituir_bloco_vi_viii(
+    marcadores_presentes: list[str],
+    linhas_por_marcador: dict[str, list[str]],
+) -> str:
+    partes = [MARCADOR_EVIDENCIAS_VI_VIII]
+    for marcador in marcadores_presentes:
+        partes.append("")
+        partes.append(marcador)
+        partes.extend(linhas_por_marcador.get(marcador, []))
+    return "\n".join(partes).strip()
+
+
+def _truncar_bloco_vi_viii(bloco: str, limite_chars: int) -> str:
+    """Trunca linhas de conteudo preservando cabecalho global e de subsecoes."""
+    bloco = bloco.strip()
+    if len(bloco) <= limite_chars:
+        return bloco
+
+    marcadores_presentes, linhas_por_marcador = _parse_bloco_vi_viii(bloco)
+    if not marcadores_presentes:
+        return bloco[:limite_chars]
+
+    linhas_vazias = {marcador: [] for marcador in marcadores_presentes}
+    esqueleto = _reconstituir_bloco_vi_viii(marcadores_presentes, linhas_vazias)
+    if len(esqueleto) >= limite_chars:
+        return esqueleto
+
+    linhas = {
+        marcador: list(linhas_por_marcador.get(marcador, []))
+        for marcador in marcadores_presentes
+    }
+    while True:
+        reconstruido = _reconstituir_bloco_vi_viii(marcadores_presentes, linhas)
+        if len(reconstruido) <= limite_chars:
+            return reconstruido
+
+        removido = False
+        for marcador in _MARCADORES_SUBSECAO_ORDEM:
+            secao = linhas.get(marcador, [])
+            if secao:
+                secao.pop()
+                removido = True
+                break
+        if not removido:
+            return esqueleto
+
+
 def _anexar_evidencias_patch(
     texto_resumido: str,
     evidencias: str,
     limite_chars: int = LIMITE_CHARS_PROMPT_FINAL,
 ) -> str:
-    """Anexa bloco de evidencias ao prompt de patch; preserva o bloco se truncar."""
+    """Anexa bloco de evidencias ao prompt de patch; preserva estrutura VI-VIII."""
     if not evidencias or not evidencias.strip():
         return texto_resumido
     bloco = evidencias.strip()
     combinado = f"{texto_resumido}\n\n{bloco}"
     if len(combinado) <= limite_chars:
         return combinado
+    bloco = _truncar_bloco_vi_viii(bloco, limite_chars)
     reserva = len(bloco) + 2
     if reserva >= limite_chars:
-        return bloco[:limite_chars]
+        return bloco
     cabeca_max = limite_chars - reserva
     return f"{texto_resumido[:cabeca_max].rstrip()}\n\n{bloco}"
 

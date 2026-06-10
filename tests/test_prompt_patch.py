@@ -2,10 +2,16 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from nbr12721.documents.pdf_processing import MARCADOR_EVIDENCIAS_VI_VIII
+from nbr12721.documents.pdf_processing import (
+    MARCADOR_EVIDENCIAS_VI_VIII,
+    MARCADOR_QUADRO_VI,
+    MARCADOR_QUADRO_VII,
+    MARCADOR_QUADRO_VIII,
+)
 from nbr12721.extraction.prompts import PROMPT_ENRIQUECER_PATCH
 from nbr12721.orchestration.pipeline_llm import (
     _anexar_evidencias_patch,
+    _truncar_bloco_vi_viii,
     gerar_patch_llm,
 )
 from nbr12721.settings.config import LIMITE_CHARS_PROMPT_FINAL
@@ -19,6 +25,13 @@ class TestPromptPatch(unittest.TestCase):
         self.assertIn("quadro7.acabamentos", PROMPT_ENRIQUECER_PATCH)
         self.assertIn("quadro8.acabamentos", PROMPT_ENRIQUECER_PATCH)
 
+    def test_prompt_restringe_quadro7_quadro8_por_secao(self):
+        self.assertIn(MARCADOR_QUADRO_VII, PROMPT_ENRIQUECER_PATCH)
+        self.assertIn(MARCADOR_QUADRO_VIII, PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("SOMENTE", PROMPT_ENRIQUECER_PATCH)
+        self.assertIn('"Area"', PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("nao_encontrado", PROMPT_ENRIQUECER_PATCH)
+
     def test_anexar_evidencias_patch_preserva_bloco(self):
         base = "A" * 100
         evidencias = f"{MARCADOR_EVIDENCIAS_VI_VIII}\n[doc.pdf] ELEVADOR01"
@@ -26,6 +39,106 @@ class TestPromptPatch(unittest.TestCase):
         self.assertIn(MARCADOR_EVIDENCIAS_VI_VIII, resultado)
         self.assertIn("ELEVADOR01", resultado)
         self.assertLessEqual(len(resultado), 80)
+
+    def test_anexar_evidencias_patch_preserva_subsecoes_vi_viii(self):
+        bloco = "\n".join(
+            [
+                MARCADOR_EVIDENCIAS_VI_VIII,
+                "",
+                MARCADOR_QUADRO_VI,
+                "[doc.pdf] ELEVADOR01",
+                "",
+                MARCADOR_QUADRO_VII,
+                "[doc.pdf] APTO01 SALA PISO PORCELANATO",
+                "",
+                MARCADOR_QUADRO_VIII,
+                "[doc.pdf] HALL ELEV. PISO PORCELANATO",
+            ]
+        )
+        resultado = _anexar_evidencias_patch("A" * 500, bloco, limite_chars=200)
+        self.assertIn(MARCADOR_EVIDENCIAS_VI_VIII, resultado)
+        self.assertIn(MARCADOR_QUADRO_VI, resultado)
+        self.assertIn(MARCADOR_QUADRO_VII, resultado)
+        self.assertIn(MARCADOR_QUADRO_VIII, resultado)
+        self.assertLessEqual(len(resultado), 200)
+
+    def test_truncar_bloco_vi_viii_preserva_cabecalhos_vazios(self):
+        bloco = "\n".join(
+            [
+                MARCADOR_EVIDENCIAS_VI_VIII,
+                "",
+                MARCADOR_QUADRO_VI,
+                "linha " + "X" * 200,
+                "",
+                MARCADOR_QUADRO_VII,
+                "linha " + "Y" * 200,
+                "",
+                MARCADOR_QUADRO_VIII,
+                "linha " + "Z" * 200,
+            ]
+        )
+        resultado = _truncar_bloco_vi_viii(bloco, limite_chars=120)
+        self.assertIn(MARCADOR_EVIDENCIAS_VI_VIII, resultado)
+        self.assertIn(MARCADOR_QUADRO_VI, resultado)
+        self.assertIn(MARCADOR_QUADRO_VII, resultado)
+        self.assertIn(MARCADOR_QUADRO_VIII, resultado)
+        # Cabecalhos intactos tem prioridade sobre o limite quando o esqueleto o excede.
+        esqueleto = _truncar_bloco_vi_viii(
+            "\n".join(
+                [
+                    MARCADOR_EVIDENCIAS_VI_VIII,
+                    "",
+                    MARCADOR_QUADRO_VI,
+                    "",
+                    MARCADOR_QUADRO_VII,
+                    "",
+                    MARCADOR_QUADRO_VIII,
+                ]
+            ),
+            limite_chars=120,
+        )
+        self.assertEqual(resultado, esqueleto)
+
+        resultado_grande = _truncar_bloco_vi_viii(bloco, limite_chars=500)
+        self.assertLessEqual(len(resultado_grande), 500)
+        self.assertIn(MARCADOR_QUADRO_VIII, resultado_grande)
+
+    def test_truncar_bloco_vi_viii_remove_vi_antes_de_vii_viii(self):
+        bloco = "\n".join(
+            [
+                MARCADOR_EVIDENCIAS_VI_VIII,
+                "",
+                MARCADOR_QUADRO_VI,
+                "VI-A",
+                "VI-B",
+                "VI-C",
+                "",
+                MARCADOR_QUADRO_VII,
+                "VII-A",
+                "",
+                MARCADOR_QUADRO_VIII,
+                "VIII-A",
+            ]
+        )
+        esqueleto = _truncar_bloco_vi_viii(
+            "\n".join(
+                [
+                    MARCADOR_EVIDENCIAS_VI_VIII,
+                    "",
+                    MARCADOR_QUADRO_VI,
+                    "",
+                    MARCADOR_QUADRO_VII,
+                    "",
+                    MARCADOR_QUADRO_VIII,
+                ]
+            ),
+            limite_chars=10_000,
+        )
+        limite = len(esqueleto) + len("VI-A\nVI-B\nVII-A\nVIII-A") + 2
+        resultado = _truncar_bloco_vi_viii(bloco, limite_chars=limite)
+        self.assertIn("VII-A", resultado)
+        self.assertIn("VIII-A", resultado)
+        self.assertNotIn("VI-C", resultado)
 
     def test_anexar_evidencias_patch_sem_evidencias_retorna_base(self):
         base = "texto base"

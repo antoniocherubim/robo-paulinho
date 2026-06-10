@@ -118,7 +118,7 @@ Regras inegociáveis:
 - Evidência obrigatória por item; sem evidência clara → `nao_encontrado`, não inventar.
 - Campos bloqueados (CNPJ, CREA, unidades, pavimentos, vagas, áreas, CUB, Quadros I/II/V) **não** entram no prompt como editáveis.
 - Quadros VI–VIII: lista não vazia com objetos de conteúdo real (template vazio é rejeitado); lista vazia e `evidencia: "template vazio"` são proibidas no patch.
-- Patch LLM recebe bloco dedicado `EVIDENCIAS QUADROS VI-VIII` (equipamentos/acabamentos); VI–VIII ainda não são preenchidos deterministicamente.
+- Patch LLM recebe bloco `EVIDENCIAS QUADROS VI-VIII` com três subseções: `[QUADRO VI - EQUIPAMENTOS]`, `[QUADRO VII - ACABAMENTOS PRIVATIVOS]`, `[QUADRO VIII - ACABAMENTOS AREAS COMUNS]`. Quadro7/8 só podem citar evidências da subseção correspondente; material sem dependência → `nao_encontrado`.
 - Campos textuais: patch só substitui vazio ou lixo OCR (`,`, `[*.pdf]`, `FICARA CONDIC`).
 - O híbrido preserva `qtdUnidades`, `quadro1`, `quadro2`, CUB e derivados do determinístico.
 

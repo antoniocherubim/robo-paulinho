@@ -34,6 +34,9 @@ __all__ = [
     "extrair_texto_pdf",
     "iterar_texto_pdf_paginas",
     "MARCADOR_EVIDENCIAS_VI_VIII",
+    "MARCADOR_QUADRO_VI",
+    "MARCADOR_QUADRO_VII",
+    "MARCADOR_QUADRO_VIII",
     "normalizar_ocr",
     "prefiltrar_texto",
     "separar_documentos",
@@ -635,19 +638,58 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
 
 
 MARCADOR_EVIDENCIAS_VI_VIII = "EVIDENCIAS QUADROS VI-VIII:"
+MARCADOR_QUADRO_VI = "[QUADRO VI - EQUIPAMENTOS]"
+MARCADOR_QUADRO_VII = "[QUADRO VII - ACABAMENTOS PRIVATIVOS]"
+MARCADOR_QUADRO_VIII = "[QUADRO VIII - ACABAMENTOS AREAS COMUNS]"
 
-_PADRAO_VI_VIII = re.compile(
-    r"\b(?:ELEVADOR\w*|BOMBA|PRESSUR|DUTO|ESCADA|BARRILETE|RESERVAT|"
-    r"GÁS|GAS|MEDIDOR|"
-    r"HALL|HALLSOCIAL|HALL\s+SOCIAL|GOURMET|SACADA|CIRC|DML|LAZER|"
-    r"PISO|PAREDE|TETO|PINTURA|PORCELANATO|CERÂMICA|CERAMICA|CIMENTADO|"
-    r"GRAFITE|ALUMÍNIO|ALUMINIO|VIDRO|MADEIRA|PORTA|JANELA|ACABAMENTO)\b",
+_MARCADORES_SUBSECAO = (
+    MARCADOR_QUADRO_VI,
+    MARCADOR_QUADRO_VII,
+    MARCADOR_QUADRO_VIII,
+)
+
+_RE_HALL_ELEV_AMBIENTE = re.compile(
+    r"\bHALL\b.*\bELEV(?:ADOR(?:ES)?|\.\b)|\bHALL\s+ELEV\.",
+    re.IGNORECASE,
+)
+_RE_QUADRO_VI = re.compile(
+    r"\b(?:ELEVADOR\d+|ELEVADOR\s*\d+|ELEVADORES?\b|BOMBA|PRESSUR|"
+    r"RESERVAT(?:ORIO)?|MEDIDOR|GÁS|GAS|DUTO)\b",
+    re.IGNORECASE,
+)
+_RE_QUADRO_VII = re.compile(
+    r"\b(?:APTO|DORM|SUITE|SALA|COZINHA|BANHO|SACADA|AREA\s*SERV)\b",
+    re.IGNORECASE,
+)
+_RE_QUADRO_VIII = re.compile(
+    r"\b(?:HALL|ESCADA|CIRC|LAZER|GOURMET|PISCINA|ACADEMIA|GARAGEM|"
+    r"BARRILETE|DML)\b",
+    re.IGNORECASE,
+)
+_PADRAO_GATE_VI_VIII = re.compile(
+    "|".join(
+        f"(?:{p.pattern})"
+        for p in (_RE_HALL_ELEV_AMBIENTE, _RE_QUADRO_VI, _RE_QUADRO_VII, _RE_QUADRO_VIII)
+    ),
     re.IGNORECASE,
 )
 
 
+def _classificar_linha_vi_viii(linha: str) -> str | None:
+    """Retorna 'vi', 'vii', 'viii' ou None. HALL + elevador (ambiente) vai para VIII."""
+    if _RE_HALL_ELEV_AMBIENTE.search(linha):
+        return "viii"
+    if _RE_QUADRO_VI.search(linha):
+        return "vi"
+    if _RE_QUADRO_VII.search(linha):
+        return "vii"
+    if _RE_QUADRO_VIII.search(linha):
+        return "viii"
+    return None
+
+
 def _linha_ocr_ruim(linha: str) -> bool:
-    if len(linha) <= 24 and _PADRAO_VI_VIII.search(linha):
+    if len(linha) <= 24 and _PADRAO_GATE_VI_VIII.search(linha):
         return False
     palavras_longas = re.findall(r"\b[a-zA-ZÀ-ü]{4,}\b", linha)
     if len(palavras_longas) >= 2:
@@ -656,10 +698,44 @@ def _linha_ocr_ruim(linha: str) -> bool:
     return nao_alfa / max(len(linha), 1) > 0.55
 
 
-def extrair_evidencias_acabamentos_equipamentos(textos: str, limite_linhas: int = 80) -> str:
-    """Seleciona linhas uteis para Quadros VI-VIII (patch LLM v2)."""
+def _montar_bloco_vi_viii(
+    buckets: dict[str, list[str]],
+    *,
+    incluir_vazias: bool = False,
+) -> str:
+    secoes = (
+        ("vi", MARCADOR_QUADRO_VI),
+        ("vii", MARCADOR_QUADRO_VII),
+        ("viii", MARCADOR_QUADRO_VIII),
+    )
+    partes: list[str] = [MARCADOR_EVIDENCIAS_VI_VIII]
+    for chave, marcador in secoes:
+        linhas = buckets.get(chave, [])
+        if not linhas and not incluir_vazias:
+            continue
+        partes.append("")
+        partes.append(marcador)
+        partes.extend(linhas)
+    if len(partes) == 1:
+        return ""
+    return "\n".join(partes).strip()
+
+
+def extrair_evidencias_acabamentos_equipamentos(
+    textos: str,
+    limite_linhas: int = 80,
+    limite_por_secao: int | None = None,
+) -> str:
+    """Seleciona linhas uteis para Quadros VI-VIII, classificadas por secao."""
+    if limite_por_secao is None:
+        limite_por_secao = max(20, limite_linhas // 3)
+
     doc_atual = ""
-    candidatos: list[tuple[int, str]] = []
+    buckets: dict[str, list[tuple[int, str]]] = {
+        "vi": [],
+        "vii": [],
+        "viii": [],
+    }
     vistos: set[str] = set()
     ordem = 0
 
@@ -674,9 +750,13 @@ def extrair_evidencias_acabamentos_equipamentos(textos: str, limite_linhas: int 
             doc_atual = m_doc.group(1).strip()
             continue
 
-        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII):
+        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or any(
+            linha.startswith(m) for m in _MARCADORES_SUBSECAO
+        ):
             continue
-        if not _PADRAO_VI_VIII.search(linha):
+
+        secao = _classificar_linha_vi_viii(linha)
+        if secao is None:
             continue
         if _linha_ocr_ruim(linha):
             continue
@@ -692,13 +772,16 @@ def extrair_evidencias_acabamentos_equipamentos(textos: str, limite_linhas: int 
             continue
 
         vistos.add(chave)
-        candidatos.append((ordem, item))
+        buckets[secao].append((ordem, item))
 
-    if not candidatos:
-        return ""
+    resultado: dict[str, list[str]] = {}
+    for secao, candidatos in buckets.items():
+        candidatos.sort(key=lambda x: x[0])
+        resultado[secao] = [
+            item for _, item in candidatos[:limite_por_secao]
+        ]
 
-    linhas = [item for _, item in candidatos[:limite_linhas]]
-    return f"{MARCADOR_EVIDENCIAS_VI_VIII}\n" + "\n".join(linhas)
+    return _montar_bloco_vi_viii(resultado)
 
 
 def _combinar_evidencias_e_corpo(evidencias, corpo, limite_chars):

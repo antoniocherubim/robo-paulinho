@@ -110,10 +110,15 @@ Regras:
 - Nao altere campos bloqueados. Nao retorne o JSON deterministico completo.
 
 Regras Quadros VI-VIII:
-- quadro6.equipamentos: inclua apenas equipamentos citados (elevador, bomba, gas, pressurizacao, barrilete, reservatorio). Campos tipo/acabamento vazios se ausentes no texto. Palavra solta ELEVADOR pode virar item com confianca baixa ou media, sem inventar tipo.
-- quadro7.acabamentos: acabamentos de areas privativas; exige dependencia + material (pisos, paredes, tetos ou outros).
-- quadro8.acabamentos: acabamentos de areas comuns; mesma regra de dependencia + material.
-- Se nao houver dependencia e material, registre em nao_encontrado em vez de enviar lista vazia.
+- quadro6.equipamentos: use somente linhas da secao [QUADRO VI - EQUIPAMENTOS]. Inclua apenas equipamentos citados (elevador, bomba, gas, pressurizacao, barrilete, reservatorio). Campos tipo/acabamento vazios se ausentes no texto. Palavra solta ELEVADOR pode virar item com confianca baixa ou media, sem inventar tipo.
+- quadro7.acabamentos: use SOMENTE linhas da secao [QUADRO VII - ACABAMENTOS PRIVATIVOS]. Cada item exige dependencia nao vazia e pelo menos um de pisos, paredes, tetos, outros com material citado no texto.
+- quadro8.acabamentos: use SOMENTE linhas da secao [QUADRO VIII - ACABAMENTOS AREAS COMUNS]. Mesma regra de dependencia + material.
+- Material solto (PISO, PORCELANATO etc.) sem dependencia/ambiente na mesma evidencia: registre em nao_encontrado, nao invente item.
+- Proibido dependencia generica sem evidencia: "Area", "Ambiente", "Geral".
+- Se nao houver dependencia e material explicitos na subsecao correta, registre em nao_encontrado em vez de enviar lista vazia.
 
 Exemplo permitido para quadro6:
-{{"path":"quadro6.equipamentos","valor":[{{"nome":"Elevador","tipo":"","acabamento":"","detalhes":"ELEVADOR01/ELEVADOR02/ELEVADOR03 citados"}}],"evidencia":"ELEVADOR01 ELEVADOR02 ELEVADOR03","confianca":"media"}}"""
+{{"path":"quadro6.equipamentos","valor":[{{"nome":"Elevador","tipo":"","acabamento":"","detalhes":"ELEVADOR01/ELEVADOR02/ELEVADOR03 citados"}}],"evidencia":"ELEVADOR01 ELEVADOR02 ELEVADOR03","confianca":"media"}}
+
+Exemplo permitido para quadro7:
+{{"path":"quadro7.acabamentos","valor":[{{"dependencia":"Sala","pisos":"Porcelanato","paredes":"Pintura","tetos":"","outros":""}}],"evidencia":"APTO01 SALA PISO PORCELANATO PAREDE PINTURA","confianca":"media"}}"""
