@@ -443,6 +443,70 @@ ENGENHEIRA CIVIL - CREA SP-12345/D
         dados = extrair_dados_deterministico(texto)
         self.assertEqual(dados["projeto"]["nomeEdificio"], "RESIDENCIAL ALPHA")
 
+    def test_cnpj_prefere_rotulado_com_mascara_ausente(self):
+        texto = """
+YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA 06020259103960001
+CNPJ10.910.7480001-85
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["cnpj"], "10.910.748/0001-85")
+
+    def test_cnpj_nao_pega_numero_solto_quando_sem_rotulo(self):
+        texto = "EMPRESA EXEMPLO LTDA 12345678901234"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["incorporador"]["cnpj"], "")
+
+    def test_cidade_uf_remove_prefixo_ocr_curto(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_cidade_uf,
+        )
+
+        self.assertEqual(_extrair_cidade_uf("Acd Londrina-PR"), "Londrina-PR")
+        self.assertEqual(
+            _extrair_cidade_uf("(aga (aad (asa (acd LONDRINA-PR 24/07/2023"),
+            "Londrina-PR",
+        )
+
+    def test_cidade_uf_preserva_cidade_composta(self):
+        from nbr12721.extraction.deterministic_extraction.base_fields import (
+            _extrair_cidade_uf,
+        )
+
+        self.assertEqual(_extrair_cidade_uf("BELO HORIZONTE-MG"), "Belo Horizonte-MG")
+        self.assertEqual(_extrair_cidade_uf("Rio de Janeiro-RJ"), "Rio De Janeiro-RJ")
+
+    def test_nome_edificio_rejeita_habitese_condicionado(self):
+        texto = """
+O CERTIFICADO DE VISTORIA FICARA CONDICIONADO A
+EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]
+"""
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["nomeEdificio"], "")
+
+    def test_nome_edificio_rejeita_emprendimento_com_condicinado(self):
+        texto = "EMPREENDIMENTO, FICARA CONDICINADO A"
+        dados = extrair_dados_deterministico(texto)
+        self.assertEqual(dados["projeto"]["nomeEdificio"], "")
+
+    def test_endereco_remove_prefixo_arquivo_pdf(self):
+        from nbr12721.extraction.deterministic_extraction.identity import (
+            _extrair_responsavel_endereco,
+        )
+
+        texto = "[foo.pdf] Rua das Flores, 123, Centro, CEP 80000-000"
+        self.assertEqual(
+            _extrair_responsavel_endereco(texto),
+            "Rua das Flores, 123, Centro, CEP 80000-000",
+        )
+
+    def test_nao_remove_rmv_no_meio(self):
+        texto = "EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]"
+        dados = extrair_dados_deterministico(texto)
+        self.assertIn(
+            "[RMV]",
+            dados["quadro3"]["projetoPadrao"]["designacao"],
+        )
+
     def test_quadro5_outras_indicacoes(self):
         texto = """
 Processo Aprovação nº 99.001/2024-06

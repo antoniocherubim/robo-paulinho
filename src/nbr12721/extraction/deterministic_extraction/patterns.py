@@ -74,17 +74,31 @@ RE_BLOCO_ADMINISTRATIVO = re.compile(
     r"Assinado|Digitalmente|Digital|Dados)\b",
     re.IGNORECASE,
 )
+RE_CNPJ_ROTULADO = re.compile(
+    r"CNPJ\s*(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{2}\.?\d{3}\.?\d{3}\d{4}-?\d{2})",
+    re.IGNORECASE,
+)
 RE_LINHA_CNPJ = re.compile(
-    r"\bCNPJ\b|"
     r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b|"
     r"\b\d{2}\.\d{3}\.\d{3}\d{4}-\d{2}\b",
+    re.IGNORECASE,
+)
+RE_PREFIXO_ARQUIVO_PDF = re.compile(
+    r"^\[[^\]]+\.pdf\]\s*",
+    re.IGNORECASE,
+)
+RE_LIXO_NOME_EDIFICIO = re.compile(
+    r"\b(?:CERTIFICADO\s+DE\s+VISTORIA|HABITE-?SE|"
+    r"FICARA\s+CONDIC\w*|CONDICIONAD\w*|CONDIEINAD\w*)\b|^\s*[,;:\-–—]",
     re.IGNORECASE,
 )
 
 
 def linha_contem_cnpj(linha: str) -> bool:
-    """True apenas quando a linha menciona CNPJ formatado (nao CPF nem data)."""
-    return bool(RE_LINHA_CNPJ.search(linha))
+    """True quando a linha tem CNPJ rotulado ou mascarado (nao CPF nem data)."""
+    return bool(RE_CNPJ_ROTULADO.search(linha) or RE_LINHA_CNPJ.search(linha))
+
+
 RE_EMPRESA_JURIDICA = re.compile(
     r"\b(?:LTDA|S/?A\.?|SA|EIRELI|SPE|INCORPORA[CÇ][AÃ]O|CONSTRU[CÇ][AÃ]O|"
     r"EMPREENDIMENTOS)\b",

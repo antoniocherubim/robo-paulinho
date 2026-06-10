@@ -43,7 +43,7 @@ Reutilizar texto já extraído (pula leitura de PDFs):
 python3 main.py --skip-extracao
 ```
 
-Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original):
+Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original). **Após mudanças no prefiltro**, regenere o cache com pipeline completo (OCR) antes de usar `--usar-texto-filtrado-cache` — o flag não refiltra automaticamente.
 
 ```bash
 python3 main.py --usar-texto-filtrado-cache

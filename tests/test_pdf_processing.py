@@ -30,6 +30,20 @@ Nº de ALVARÁ: 2457/2023
         self.assertIn("TOTAL DE VAGAS", filtrado)
         self.assertIn("ALVARÁ: 2457/2023", filtrado)
 
+    def test_prefiltro_preserva_cnpj_colado_sem_barra(self):
+        ruido = "\n".join("240x480 240x480 JANELA PORTA" for _ in range(120))
+        texto = f"""
+========================================
+DOCUMENTO: memorial.pdf
+========================================
+YTICON CONSTRUÇÃO E INCORPORAÇÃO LTDA 06020259103960001
+CNPJ10.910.7480001-85
+CURITIBA-PR 24/07/2023
+{ruido}
+"""
+        filtrado = prefiltrar_texto(texto, verbose=False)
+        self.assertIn("CNPJ10.910.7480001-85", filtrado)
+
 
 class TestOcrRegional(unittest.TestCase):
     def _imagem_fake(self, largura=1000, altura=800):

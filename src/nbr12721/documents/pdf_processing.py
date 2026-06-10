@@ -7,7 +7,12 @@ import sys
 import tempfile
 import time
 
-from ..extraction.deterministic_extraction.patterns import RE_CIDADE_UF_EVIDENCIA
+from ..extraction.deterministic_extraction.patterns import (
+    RE_CIDADE_UF_EVIDENCIA,
+    RE_CNPJ_ROTULADO,
+    RE_LINHA_CNPJ,
+    linha_contem_cnpj,
+)
 from ..settings.config import (
     LIMITE_CHARS_LOTE,
     LIMITE_CHARS_TEXTO_FILTRADO,
@@ -548,8 +553,11 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
 
     def pontuar(linha):
         score = 0
+        if RE_CNPJ_ROTULADO.search(linha):
+            score += 95
+        elif RE_LINHA_CNPJ.search(linha):
+            score += 90
         regras = [
-            (r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b|\bCNPJ\b", 90),
             (r"\bCREA\b|\bCAU\b|\bART\b|\bRRT\b|RESPONS[AÁ]VEL T[EÉ]CNICO", 80),
             (r"\bALVAR[AÁ]\b|\bPROCESSO\s+APROVA", 85),
             (rf"\bLOCAL\s+DA\s+OBRA\b|\bSITUADO\b|{RE_CIDADE_UF_EVIDENCIA.pattern}", 85),
@@ -568,6 +576,8 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
                 score += valor
         if padrao_baixo_valor.search(linha):
             score -= 75
+        if re.search(r"\d{14,}", linha) and not RE_CNPJ_ROTULADO.search(linha):
+            score -= 15
         if len(re.findall(r"\b[a-zA-ZÀ-ü]{4,}\b", linha)) < 2:
             score -= 20
         if len(re.sub(r"[a-zA-ZÀ-ü\s]", "", linha)) / max(len(linha), 1) > 0.55:
@@ -590,7 +600,7 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
             doc_atual = m_doc.group(1).strip()
             continue
 
-        if not padrao_candidato.search(linha):
+        if not (padrao_candidato.search(linha) or linha_contem_cnpj(linha)):
             continue
 
         score = pontuar(linha)
@@ -812,9 +822,10 @@ def prefiltrar_texto(texto, verbose=True):
         nao_alfa = len(re.sub(r"[a-zA-ZÀ-ü\s]", "", linha_strip))
         if total > 8 and nao_alfa / total > 0.5:
             # Checa se nao tem palavra-chave importante antes de descartar
-            tem_kw = any(kw in linha_strip.lower() for kw in [
-                "cnpj", "cpf", "crea", "cau", "art", "alvara", "alvará", "r$"
-            ])
+            tem_kw = linha_contem_cnpj(linha_strip) or any(
+                kw in linha_strip.lower()
+                for kw in ("cpf", "crea", "cau", "art", "alvara", "alvará", "r$")
+            )
             if not tem_kw:
                 continue
 
@@ -827,9 +838,9 @@ def prefiltrar_texto(texto, verbose=True):
         palavras_reais = re.findall(r"\b[a-zA-ZÀ-ü]{4,}\b", linha_strip)
         if len(linha_strip) > 15 and len(palavras_reais) < 2:
             # Se nao tem ao menos 2 palavras com 4+ letras, eh provavelmente fragmento
-            tem_kw_critica = any(kw in linha_strip.lower() for kw in [
-                "cnpj", "crea", "cau", "art", "alvara"
-            ])
+            tem_kw_critica = linha_contem_cnpj(linha_strip) or any(
+                kw in linha_strip.lower() for kw in ("crea", "cau", "art", "alvara")
+            )
             if not tem_kw_critica:
                 continue
 
@@ -843,18 +854,17 @@ def prefiltrar_texto(texto, verbose=True):
                 ratio_curtas = palavras_curtas / len(todas_palavras)
                 if ratio_curtas > 0.55:
                     # Excecoes: preservar linhas de quadro de areas e dados criticos
-                    tem_excecao = bool(re.search(
-                        # Padroes especiais (CNPJ, CREA, etc.)
-                        r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|"
-                        r"crea|cau|\bart\b|alvar[aá]|r\$|"
-                        # Areas grandes formatadas (1.234,56 ou 12.345,67)
-                        r"\d{1,2}\.\d{3},\d{2}|"
-                        # Palavras-chave de quadro de areas
-                        r"\btorre\b|\btipo\b|\bsubtotal\b|\btotal\b|"
-                        r"\bcoberto\b|\bdescoberto\b|\bquant\b|"
-                        r"\bunidade\b|\bquantidade\b|\bprivativ\b",
-                        linha_strip.lower()
-                    ))
+                    tem_excecao = bool(
+                        linha_contem_cnpj(linha_strip)
+                        or re.search(
+                            r"crea|cau|\bart\b|alvar[aá]|r\$|"
+                            r"\d{1,2}\.\d{3},\d{2}|"
+                            r"\btorre\b|\btipo\b|\bsubtotal\b|\btotal\b|"
+                            r"\bcoberto\b|\bdescoberto\b|\bquant\b|"
+                            r"\bunidade\b|\bquantidade\b|\bprivativ\b",
+                            linha_strip.lower(),
+                        )
+                    )
                     if not tem_excecao:
                         continue
 
@@ -884,16 +894,18 @@ def prefiltrar_texto(texto, verbose=True):
         bloco_lower = bloco_strip.lower()
 
         # Padroes especiais SEMPRE mantidos (alta densidade de info)
-        padrao_especial = bool(re.search(
-            r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|"          # CNPJ
-            r"\d{3}\.\d{3}\.\d{3}-\d{2}|"                 # CPF
-            r"R\$\s*[\d.,]+|"                              # Valores em reais
-            r"crea[\s\-:]*[a-z]{0,2}[-\s]*\d+|"           # CREA
-            r"cau[\s\-:]*[a-z]{0,2}[-\s]*\d+|"            # CAU
-            r"art[\s\-:]*\d{4,}|"                          # ART
-            r"alvar[aá][\s\-:n°º.]*\d+",                   # Alvara
-            bloco_lower
-        ))
+        padrao_especial = bool(
+            linha_contem_cnpj(bloco_strip)
+            or re.search(
+                r"\d{3}\.\d{3}\.\d{3}-\d{2}|"                 # CPF
+                r"R\$\s*[\d.,]+|"                              # Valores em reais
+                r"crea[\s\-:]*[a-z]{0,2}[-\s]*\d+|"           # CREA
+                r"cau[\s\-:]*[a-z]{0,2}[-\s]*\d+|"            # CAU
+                r"art[\s\-:]*\d{4,}|"                          # ART
+                r"alvar[aá][\s\-:n°º.]*\d+",                   # Alvara
+                bloco_lower,
+            )
+        )
 
         # Contar palavras-chave + verificar densidade textual
         palavras_bloco = set(re.findall(r"\b[a-zA-ZÀ-ü\-\']+\b", bloco_lower))

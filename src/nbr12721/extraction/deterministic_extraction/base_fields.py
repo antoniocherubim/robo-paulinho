@@ -12,6 +12,7 @@ from .patterns import (
     RE_AREA_TERRENO_AT,
     RE_CIDADE_UF_LINHA,
     RE_CNPJ_DIGITOS,
+    RE_CNPJ_ROTULADO,
     RE_CONTEXTO_PROFISSIONAL,
     RE_CREA,
     RE_CREA_COLADO,
@@ -25,6 +26,11 @@ from .patterns import (
     UFS_BRASIL,
 )
 from .utils import _parse_numero_br
+
+_RE_PREFIXO_OCR_LINHA_CIDADE = re.compile(r"^(?:\([^)]*\)\s*)+")
+_PRIMEIRA_PALAVRA_CIDADE_PRESERVAR = frozenset(
+    {"de", "do", "da", "dos", "das", "são", "sao", "rio", "foz", "belo", "porto", "campo"}
+)
 
 
 def _somente_digitos(texto: str) -> str:
@@ -43,33 +49,27 @@ def _normalizar_cnpj(raw: str) -> str:
 
 
 def _extrair_cnpj(texto: str) -> str:
-    padroes = [
-        re.compile(
-            r"CNPJ\s*(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})",
-            re.IGNORECASE,
-        ),
-        re.compile(
-            r"CNPJ\s*(\d{2}\.?\d{3}\.?\d{3}\d{4}-?\d{2})",
-            re.IGNORECASE,
-        ),
+    for m in RE_CNPJ_ROTULADO.finditer(texto):
+        normalizado = _normalizar_cnpj(m.group(1))
+        if normalizado:
+            return normalizado
+    for bloco in re.findall(
+        r"CNPJ\s*([\d./-]{14,20})",
+        texto,
+        flags=re.IGNORECASE,
+    ):
+        normalizado = _normalizar_cnpj(bloco)
+        if normalizado:
+            return normalizado
+    for padrao in (
         re.compile(r"\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b"),
         re.compile(r"\b(\d{2}\.\d{3}\.\d{3}\d{4}-\d{2})\b"),
-    ]
-    for padrao in padroes:
+    ):
         m = padrao.search(texto)
         if m:
             normalizado = _normalizar_cnpj(m.group(1))
             if normalizado:
                 return normalizado
-    blocos = re.findall(
-        r"CNPJ\s*([\d./-]{14,20})",
-        texto,
-        flags=re.IGNORECASE,
-    )
-    for bloco in blocos:
-        normalizado = _normalizar_cnpj(bloco)
-        if normalizado:
-            return normalizado
     return ""
 
 
@@ -87,7 +87,56 @@ def _linha_eh_contexto_profissional(linha: str) -> bool:
 
 
 def _linha_para_cidade_uf(linha: str) -> str:
-    return RE_PREFIXO_EVIDENCIA_ARQUIVO.sub("", linha.strip())
+    limpa = RE_PREFIXO_EVIDENCIA_ARQUIVO.sub("", linha.strip())
+    return _RE_PREFIXO_OCR_LINHA_CIDADE.sub("", limpa)
+
+
+def _limpar_cidade_candidata(cidade: str) -> str:
+    """
+    Remove prefixos OCR curtos (ex.: Acd) preservando cidades compostas reais
+    (São Paulo, Rio de Janeiro, Belo Horizonte, Foz do Iguaçu).
+    """
+    partes = cidade.strip().split()
+    if len(partes) <= 1:
+        return cidade.strip()
+
+    while partes:
+        primeiro = partes[0]
+        chave = primeiro.lower().replace("ã", "a").replace("á", "a")
+        if chave in _PRIMEIRA_PALAVRA_CIDADE_PRESERVAR:
+            break
+        if re.fullmatch(r"[A-Za-z]{2,3}", primeiro):
+            partes.pop(0)
+            continue
+        break
+    return " ".join(partes)
+
+
+def _cidade_uf_candidata_valida(cidade: str, uf: str) -> bool:
+    cidade_limpa = _limpar_cidade_candidata(cidade)
+    if len(cidade_limpa) < 4 or uf not in UFS_BRASIL:
+        return False
+    return True
+
+
+def _extrair_cidade_uf(texto: str) -> str:
+    for linha in texto.splitlines():
+        linha_busca = _linha_para_cidade_uf(linha)
+        if _linha_eh_contexto_profissional(linha_busca):
+            continue
+        if RE_LINHA_CIDADE_UF_REJEITADA.search(linha_busca):
+            continue
+        melhor: tuple[str, str] | None = None
+        for m in RE_CIDADE_UF_LINHA.finditer(linha_busca):
+            cidade = m.group(1).strip()
+            uf = m.group(2).strip().upper()
+            if not _cidade_uf_candidata_valida(cidade, uf):
+                continue
+            melhor = (cidade, uf)
+        if melhor:
+            cidade, uf = melhor
+            return _normalizar_cidade_uf(_limpar_cidade_candidata(cidade), uf)
+    return ""
 
 
 def _pontuacao_numero_admin(valor: str) -> int:
@@ -109,22 +158,6 @@ def _pontuacao_numero_admin(valor: str) -> int:
     if re.match(r"^\d+\.\d+\.\d+/", v):
         score += 15
     return score
-
-
-def _extrair_cidade_uf(texto: str) -> str:
-    for linha in texto.splitlines():
-        linha_busca = _linha_para_cidade_uf(linha)
-        if _linha_eh_contexto_profissional(linha_busca):
-            continue
-        if RE_LINHA_CIDADE_UF_REJEITADA.search(linha_busca):
-            continue
-        for m in RE_CIDADE_UF_LINHA.finditer(linha_busca):
-            cidade = m.group(1).strip()
-            uf = m.group(2).strip().upper()
-            if len(cidade) < 4 or uf not in UFS_BRASIL:
-                continue
-            return _normalizar_cidade_uf(cidade, uf)
-    return ""
 
 
 def _data_valida(dia: str, mes: str, ano: str) -> bool:

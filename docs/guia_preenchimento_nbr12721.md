@@ -71,6 +71,13 @@ Valores derivados de outros campos do próprio JSON, sem inventar dado externo:
 - `quadro5.garagens` — derivado de `projeto.vagasComum` + `projeto.vagasAcessorio` (`_preencher_garagens_quadro5`).
 - Rateios e áreas equivalentes **somente se** a planilha modelo não tiver fórmula própria (ver 4.3); na dúvida, não calcular em Python.
 
+**Saneamento determinístico (texto/OCR):**
+
+- CNPJ: priorizar ocorrências rotuladas (`CNPJ` na mesma linha), inclusive sem barra entre blocos (`CNPJ10.910.7480001-85`); ignorar sequências numéricas soltas quando houver CNPJ rotulado.
+- `projeto.cidadeUf`: extrair o último trecho cidade-UF válido da linha; remover prefixos OCR curtos (`Acd`, `(aga`) sem cortar cidades compostas (`São Paulo`, `Belo Horizonte`, `Foz do Iguaçu`).
+- `projeto.nomeEdificio`: preencher **somente** com rótulo explícito (`NOME DO EDIFÍCIO`, `EMPREENDIMENTO`). A tipologia `EDIFICAÇÃO RESIDENCIAL MULTIFAMILIAR VERTICAL [RMV]` **não** é nome comercial do edifício — vai para `quadro3.projetoPadrao.designacao`, não para `nomeEdificio`.
+- Campos textuais: remover prefixo conservador `[arquivo.pdf]` no início; não remover `[RMV]` ou outros colchetes no meio da string.
+
 ### 4.3 Fórmula Excel
 
 Campos em que o template já calcula totais ou derivados — o Python deve **apenas alimentar as entradas**:

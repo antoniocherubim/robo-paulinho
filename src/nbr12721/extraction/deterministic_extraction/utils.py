@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .patterns import RE_PREFIXO_ARQUIVO_PDF
+
 _UFS_BRASIL = frozenset(
     {
         "AC",
@@ -163,6 +165,11 @@ def _remover_segmentos_finais_ruido(texto: str) -> str:
     return resultado
 
 
+def _remover_prefixo_arquivo_pdf(valor: str) -> str:
+    """Remove prefixo conservador [arquivo.pdf] no inicio da string."""
+    return RE_PREFIXO_ARQUIVO_PDF.sub("", valor)
+
+
 def _limpar_ruido_ocr_textual(valor: str) -> str:
     """
     Saneamento operacional pos-OCR: simbolos isolados, virgulas finais e
@@ -170,7 +177,7 @@ def _limpar_ruido_ocr_textual(valor: str) -> str:
     """
     if not valor:
         return ""
-    texto = _limpar_texto_campo(valor)
+    texto = _remover_prefixo_arquivo_pdf(_limpar_texto_campo(valor))
     texto = _remover_bordas_simbolicas(texto)
     texto = _RE_VIRGULAS_REPETIDAS.sub(", ", texto)
     texto = texto.strip().rstrip(",")

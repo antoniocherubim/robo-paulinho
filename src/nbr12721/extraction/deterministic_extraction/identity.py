@@ -11,11 +11,12 @@ from .patterns import (
     RE_CORTE_MARCADOR_ADMIN,
     RE_CPF_CNPJ_DATA_NOME,
     linha_contem_cnpj,
-    RE_EDIFICIO_LINHA,
+    RE_DESIGNACAO,
     RE_EMAIL,
     RE_EMPRESA_JURIDICA,
     RE_ENDERECO_OBRA,
     RE_INCORPORADOR_ROTULO,
+    RE_LIXO_NOME_EDIFICIO,
     RE_LOCAL_CABECALHO,
     RE_LOCAL_KEYWORDS,
     RE_LOCAL_OBRA,
@@ -360,7 +361,11 @@ def _extrair_nome_edificio(texto: str, designacao: str = "") -> str:
     def _aceito(nome: str) -> bool:
         if not nome:
             return False
+        if RE_LIXO_NOME_EDIFICIO.search(nome):
+            return False
         if nome.upper().startswith("RESIDENCIAL MULTIFAMILIAR"):
+            return False
+        if RE_DESIGNACAO.search(nome):
             return False
         if designacao_norm and nome.upper() in designacao_norm:
             return False
@@ -369,18 +374,7 @@ def _extrair_nome_edificio(texto: str, designacao: str = "") -> str:
     for linha in texto.splitlines():
         m = RE_NOME_EDIFICIO_ROTULO.search(linha)
         if m:
-            nome = _limpar_texto_campo(m.group(1))
-            if _aceito(nome):
-                return nome
-    for linha in texto.splitlines():
-        linha_n = _normalizar_linha_ocr(linha)
-        if linha_n.upper().startswith("EDIFICAÇÃO") or linha_n.upper().startswith(
-            "EDIFICACAO"
-        ):
-            continue
-        m = RE_EDIFICIO_LINHA.match(linha_n)
-        if m:
-            nome = _limpar_texto_campo(m.group(1))
+            nome = _limpar_ruido_ocr_textual(_limpar_texto_campo(m.group(1)))
             if _aceito(nome):
                 return nome
     return ""
