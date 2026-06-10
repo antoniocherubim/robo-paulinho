@@ -44,6 +44,46 @@ CURITIBA-PR 24/07/2023
         filtrado = prefiltrar_texto(texto, verbose=False)
         self.assertIn("CNPJ10.910.7480001-85", filtrado)
 
+    def test_prefiltro_preserva_linhas_candidatos_quadro8(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_EVIDENCIAS_ACABAMENTOS,
+            extrair_candidatos_acabamentos,
+        )
+        from nbr12721.extraction.deterministic_extraction.extractor import (
+            extrair_dados_deterministico,
+        )
+
+        ruido = "\n".join("240x480 240x480 JANELA PORTA" for _ in range(120))
+        texto = f"""
+========================================
+DOCUMENTO: memorial.pdf
+========================================
+{ruido}
+CIRC. LAMINADO
+ESCADA VAZIODUTO CIMENTADO
+BARRILETE PISO CIMENTADO
+{ruido}
+"""
+        filtrado = prefiltrar_texto(texto, verbose=False)
+        self.assertIn(MARCADOR_EVIDENCIAS_ACABAMENTOS, filtrado)
+        self.assertIn("ESCADA VAZIODUTO CIMENTADO", filtrado)
+        self.assertIn("CIRC. LAMINADO", filtrado)
+
+        candidatos = extrair_candidatos_acabamentos(filtrado)
+        self.assertGreaterEqual(len(candidatos), 2)
+        deps = {c["dependencia"] for c in candidatos if c["quadro"] == "quadro8"}
+        self.assertIn("Escada", deps)
+        self.assertIn("Circ.", deps)
+
+        dados = extrair_dados_deterministico(filtrado)
+        deps_q8 = {
+            item["dependencia"]
+            for item in dados["quadro8"]["acabamentos"]
+            if item.get("dependencia")
+        }
+        self.assertIn("Escada", deps_q8)
+        self.assertIn("Circ.", deps_q8)
+
     def test_extrai_evidencias_acabamentos_equipamentos(self):
         from nbr12721.documents.pdf_processing import (
             MARCADOR_EVIDENCIAS_VI_VIII,
@@ -126,6 +166,98 @@ ELEVADOR01 ELEVADOR02
         self.assertIn("HALL ELEVADOR", sec_viii)
         self.assertNotIn("HALL ELEVADOR", sec_vi)
         self.assertIn("ELEVADOR01", sec_vi)
+
+    def test_candidato_acabamento_requer_dependencia_e_material(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        self.assertIsNone(_extrair_candidato_acabamento("SACADA", "vii"))
+        self.assertIsNone(_extrair_candidato_acabamento("CIMENTADO", "viii"))
+        self.assertIsNone(_extrair_candidato_acabamento("PISO PORCELANATO", "vii"))
+
+    def test_candidato_quadro8_escada_cimentado(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_CANDIDATOS_VII_VIII,
+            _extrair_candidato_acabamento,
+            extrair_candidatos_acabamentos_estruturados,
+        )
+
+        linha = "ESCADA VAZIODUTO CIMENTADO"
+        candidato = _extrair_candidato_acabamento(linha, "viii")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["quadro"], "quadro8")
+        self.assertEqual(candidato["dependencia"], "Escada")
+        self.assertIn("Cimentado", candidato["materiais"])
+
+        bloco = extrair_candidatos_acabamentos_estruturados(linha)
+        self.assertIn(MARCADOR_CANDIDATOS_VII_VIII, bloco)
+        self.assertIn("dependencia=Escada", bloco)
+        self.assertIn("materiais=Cimentado", bloco)
+
+    def test_candidato_quadro8_circ_laminado(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        candidato = _extrair_candidato_acabamento("CIRC. LAMINADO", "viii")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["quadro"], "quadro8")
+        self.assertEqual(candidato["dependencia"], "Circ.")
+        self.assertEqual(candidato["materiais"], ["Laminado"])
+
+    def test_sacada_sem_material_nao_gera_candidato(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_acabamentos_estruturados
+
+        texto = """
+SACADA
+ESCADA VAZIODUTO CIMENTADO
+"""
+        bloco = extrair_candidatos_acabamentos_estruturados(texto)
+        self.assertIn("dependencia=Escada", bloco)
+        self.assertNotIn("dependencia=Sacada", bloco)
+
+    def test_candidato_sala_com_materiais_contexto(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        candidato = _extrair_candidato_acabamento(
+            "APTO01 SALA PISO PORCELANATO PAREDE PINTURA",
+            "vii",
+        )
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["dependencia"], "Sala")
+        self.assertIn("Porcelanato", candidato["materiais"])
+        self.assertIn("Pintura", candidato["materiais"])
+        ctx = candidato["materiais_contexto"]
+        self.assertIn("Porcelanato", ctx["pisos"])
+        self.assertIn("Pintura", ctx["paredes"])
+
+    def test_candidato_rejeita_linha_ambigua_multiplas_dependencias(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        linha = "SACADA PISO CERAMICA SALA PISO PORCELANATO"
+        self.assertIsNone(_extrair_candidato_acabamento(linha, "vii"))
+
+    def test_candidato_hall_elevador_com_porcelanato(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        for linha in (
+            "HALL ELEVADOR PISO PORCELANATO",
+            "HALL ELEV. PISO PORCELANATO",
+        ):
+            with self.subTest(linha=linha):
+                candidato = _extrair_candidato_acabamento(linha, "viii")
+                self.assertIsNotNone(candidato)
+                self.assertEqual(candidato["quadro"], "quadro8")
+                self.assertEqual(candidato["dependencia"], "Hall elevador")
+                self.assertIn("Porcelanato", candidato["materiais"])
+                self.assertIn("Porcelanato", candidato["materiais_contexto"]["pisos"])
+
+    def test_extrair_candidatos_acabamentos_retorna_lista(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_acabamentos
+
+        texto = "ESCADA VAZIODUTO CIMENTADO\nSACADA"
+        candidatos = extrair_candidatos_acabamentos(texto)
+        self.assertIsInstance(candidatos, list)
+        self.assertEqual(len(candidatos), 1)
+        self.assertEqual(candidatos[0]["quadro"], "quadro8")
+        self.assertEqual(candidatos[0]["dependencia"], "Escada")
 
 
 class TestOcrRegional(unittest.TestCase):

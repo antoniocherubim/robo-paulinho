@@ -615,6 +615,77 @@ COBERTURA - ÁREA: 250,00 m²
             ["Pavimento térreo", "Pavimentos tipo", "Cobertura"],
         )
 
+    def test_quadro8_escada_cimentado(self):
+        dados = extrair_dados_deterministico("ESCADA VAZIODUTO CIMENTADO")
+        item = dados["quadro8"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "Escada")
+        self.assertEqual(item["outros"], "Cimentado")
+        self.assertEqual(item["pisos"], "")
+
+    def test_quadro8_hall_elevador_porcelanato(self):
+        for linha in (
+            "HALL ELEVADOR PISO PORCELANATO",
+            "HALL ELEV. PISO PORCELANATO",
+        ):
+            with self.subTest(linha=linha):
+                dados = extrair_dados_deterministico(linha)
+                item = dados["quadro8"]["acabamentos"][0]
+                self.assertEqual(item["dependencia"], "Hall elevador")
+                self.assertEqual(item["pisos"], "Porcelanato")
+                self.assertEqual(item["outros"], "")
+
+    def test_quadro8_circ_laminado(self):
+        dados = extrair_dados_deterministico("CIRC. LAMINADO")
+        item = dados["quadro8"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "Circ.")
+        self.assertEqual(item["outros"], "Laminado")
+
+    def test_sacada_isolado_nao_preenche_quadro8(self):
+        dados = extrair_dados_deterministico("SACADA")
+        item = dados["quadro8"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "")
+        self.assertEqual(item["outros"], "")
+
+    def test_quadro7_permance_vazio_com_candidato_privativo(self):
+        dados = extrair_dados_deterministico(
+            "APTO01 SALA PISO PORCELANATO PAREDE PINTURA"
+        )
+        item7 = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item7["dependencia"], "")
+        self.assertEqual(item7["pisos"], "")
+
+    def test_quadro8_sem_template_vazio_na_validacao(self):
+        from nbr12721.extraction.validation import validar_dados_extraidos
+        from test_validation import _dados_minimos_completos
+
+        from nbr12721.extraction.deterministic_extraction.quadro8 import (
+            _preencher_quadro8,
+        )
+
+        dados = _dados_minimos_completos()
+        dados["quadro7"]["acabamentos"] = [
+            {
+                "dependencia": "",
+                "pisos": "",
+                "paredes": "",
+                "tetos": "",
+                "outros": "",
+            }
+        ]
+        _preencher_quadro8(
+            dados,
+            "\n".join(
+                [
+                    "ESCADA VAZIODUTO CIMENTADO",
+                    "CIRC. LAMINADO",
+                ]
+            ),
+        )
+        resultado = validar_dados_extraidos(dados)
+        avisos = resultado["avisos_semanticos"]
+        self.assertIn("quadro7.acabamentos.template_vazio", avisos)
+        self.assertNotIn("quadro8.acabamentos.template_vazio", avisos)
+
 
 class TestLimparRuidoOcrTextual(unittest.TestCase):
     """Testes unitarios diretos do helper de saneamento pos-OCR."""

@@ -119,6 +119,8 @@ Regras inegociáveis:
 - Campos bloqueados (CNPJ, CREA, unidades, pavimentos, vagas, áreas, CUB, Quadros I/II/V) **não** entram no prompt como editáveis.
 - Quadros VI–VIII: lista não vazia com objetos de conteúdo real (template vazio é rejeitado); lista vazia e `evidencia: "template vazio"` são proibidas no patch.
 - Patch LLM recebe bloco `EVIDENCIAS QUADROS VI-VIII` com três subseções: `[QUADRO VI - EQUIPAMENTOS]`, `[QUADRO VII - ACABAMENTOS PRIVATIVOS]`, `[QUADRO VIII - ACABAMENTOS AREAS COMUNS]`. Quadro7/8 só podem citar evidências da subseção correspondente; material sem dependência → `nao_encontrado`.
+- **Candidatos estruturados** (`CANDIDATOS ESTRUTURADOS QUADROS VII-VIII`) são camada operacional pós-OCR, não inferência de engenharia. Reorganizam dependência + material **somente quando ambos aparecem na mesma linha**. Linha só com `SACADA` ou só com `CIMENTADO` não gera candidato. Quando existir `materiais_contexto` (PISO/PAREDE/TETO), a LLM deve mapear cada material ao campo correto (`pisos`, `paredes`, `tetos`). Evidências brutas permanecem no bloco VI–VIII para contexto; candidatos orientam o patch.
+- **Preenchimento determinístico do Quadro VIII:** o extrator preenche `quadro8.acabamentos` automaticamente a partir de candidatos `quadro8` (dependência + material na mesma linha OCR). Material sem superfície explícita vai para `outros`; não infere piso/parede/teto. Quadro VII continua vazio no determinístico até critério privativo separado. **Validação por responsável técnico** antes de uso formal.
 - Campos textuais: patch só substitui vazio ou lixo OCR (`,`, `[*.pdf]`, `FICARA CONDIC`).
 - O híbrido preserva `qtdUnidades`, `quadro1`, `quadro2`, CUB e derivados do determinístico.
 

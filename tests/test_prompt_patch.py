@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from nbr12721.documents.pdf_processing import (
+    MARCADOR_CANDIDATOS_VII_VIII,
     MARCADOR_EVIDENCIAS_VI_VIII,
     MARCADOR_QUADRO_VI,
     MARCADOR_QUADRO_VII,
@@ -11,6 +12,7 @@ from nbr12721.documents.pdf_processing import (
 from nbr12721.extraction.prompts import PROMPT_ENRIQUECER_PATCH
 from nbr12721.orchestration.pipeline_llm import (
     _anexar_evidencias_patch,
+    _truncar_bloco_patch_completo,
     _truncar_bloco_vi_viii,
     gerar_patch_llm,
 )
@@ -31,6 +33,13 @@ class TestPromptPatch(unittest.TestCase):
         self.assertIn("SOMENTE", PROMPT_ENRIQUECER_PATCH)
         self.assertIn('"Area"', PROMPT_ENRIQUECER_PATCH)
         self.assertIn("nao_encontrado", PROMPT_ENRIQUECER_PATCH)
+
+    def test_prompt_inclui_regras_para_candidatos_estruturados(self):
+        self.assertIn("CANDIDATOS ESTRUTURADOS QUADROS VII-VIII", PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("Preferir bloco CANDIDATOS ESTRUTURADOS", PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("materiais_contexto", PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("candidatos quadro7", PROMPT_ENRIQUECER_PATCH)
+        self.assertIn("candidatos quadro8", PROMPT_ENRIQUECER_PATCH)
 
     def test_anexar_evidencias_patch_preserva_bloco(self):
         base = "A" * 100
@@ -140,6 +149,33 @@ class TestPromptPatch(unittest.TestCase):
         self.assertIn("VIII-A", resultado)
         self.assertNotIn("VI-C", resultado)
 
+    def test_truncar_bloco_patch_preserva_candidatos_antes_de_evidencias(self):
+        raw = "\n".join(
+            [
+                MARCADOR_EVIDENCIAS_VI_VIII,
+                "",
+                MARCADOR_QUADRO_VI,
+                "VI-UNICO-" + "X" * 300,
+                "",
+                MARCADOR_QUADRO_VIII,
+                "VIII-UNICO-" + "Y" * 300,
+            ]
+        )
+        candidatos = "\n".join(
+            [
+                MARCADOR_CANDIDATOS_VII_VIII,
+                "- quadro8 | dependencia=Escada | materiais=Cimentado | evidencia=ESCADA CIMENTADO",
+                "- quadro8 | dependencia=Circ. | materiais=Laminado | evidencia=CIRC. LAMINADO",
+            ]
+        )
+        limite = len(candidatos) + 200
+        resultado = _truncar_bloco_patch_completo(raw, candidatos, limite_chars=limite)
+        self.assertIn(MARCADOR_CANDIDATOS_VII_VIII, resultado)
+        self.assertIn("dependencia=Escada", resultado)
+        self.assertIn("dependencia=Circ.", resultado)
+        self.assertNotIn("VI-UNICO", resultado)
+        self.assertNotIn("VIII-YYYY", resultado)
+
     def test_anexar_evidencias_patch_sem_evidencias_retorna_base(self):
         base = "texto base"
         self.assertEqual(_anexar_evidencias_patch(base, ""), base)
@@ -170,6 +206,10 @@ class TestPromptPatch(unittest.TestCase):
             patch(
                 "nbr12721.orchestration.pipeline_llm.extrair_evidencias_acabamentos_equipamentos",
                 return_value=evidencias,
+            ),
+            patch(
+                "nbr12721.orchestration.pipeline_llm.extrair_candidatos_acabamentos_estruturados",
+                return_value="",
             ),
             patch(
                 "nbr12721.orchestration.pipeline_llm.chamar_llm",

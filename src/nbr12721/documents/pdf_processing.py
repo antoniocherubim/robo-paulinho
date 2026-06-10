@@ -1,5 +1,6 @@
 """Extracao e reducao textual de PDFs para o pipeline NBR 12721."""
 import gc
+import json
 import logging
 import os
 import re
@@ -31,9 +32,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "extrair_evidencias_acabamentos_equipamentos",
+    "extrair_candidatos_acabamentos",
+    "extrair_candidatos_acabamentos_estruturados",
     "extrair_texto_pdf",
     "iterar_texto_pdf_paginas",
     "MARCADOR_EVIDENCIAS_VI_VIII",
+    "MARCADOR_CANDIDATOS_VII_VIII",
     "MARCADOR_QUADRO_VI",
     "MARCADOR_QUADRO_VII",
     "MARCADOR_QUADRO_VIII",
@@ -638,6 +642,8 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
 
 
 MARCADOR_EVIDENCIAS_VI_VIII = "EVIDENCIAS QUADROS VI-VIII:"
+MARCADOR_EVIDENCIAS_ACABAMENTOS = "EVIDENCIAS ACABAMENTOS QUADROS VII-VIII:"
+MARCADOR_CANDIDATOS_VII_VIII = "CANDIDATOS ESTRUTURADOS QUADROS VII-VIII:"
 MARCADOR_QUADRO_VI = "[QUADRO VI - EQUIPAMENTOS]"
 MARCADOR_QUADRO_VII = "[QUADRO VII - ACABAMENTOS PRIVATIVOS]"
 MARCADOR_QUADRO_VIII = "[QUADRO VIII - ACABAMENTOS AREAS COMUNS]"
@@ -646,6 +652,83 @@ _MARCADORES_SUBSECAO = (
     MARCADOR_QUADRO_VI,
     MARCADOR_QUADRO_VII,
     MARCADOR_QUADRO_VIII,
+)
+
+_MAX_DISTANCIA_DEP_MATERIAL = 120
+_MAX_LINHA_CANDIDATO = 220
+
+_MATERIAL_LABELS: dict[str, str] = {
+    "PORCELANATO": "Porcelanato",
+    "CERAMICA": "Ceramica",
+    "CERÂMICA": "Ceramica",
+    "CIMENTADO": "Cimentado",
+    "LAMINADO": "Laminado",
+    "PINTURA": "Pintura",
+    "MADEIRA": "Madeira",
+    "ALUMINIO": "Aluminio",
+    "ALUMÍNIO": "Aluminio",
+    "VIDRO": "Vidro",
+    "LAJE IMPERM": "Laje imperm",
+    "GRAFITE": "Grafite",
+}
+
+_RE_MATERIAL_TOKEN = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in _MATERIAL_LABELS) + r")\b",
+    re.IGNORECASE,
+)
+
+_RE_SUPERFICIE_MATERIAL = (
+    (
+        re.compile(
+            r"\bPISO(?:S)?\s+(" + "|".join(re.escape(k) for k in _MATERIAL_LABELS) + r")\b",
+            re.IGNORECASE,
+        ),
+        "pisos",
+    ),
+    (
+        re.compile(
+            r"\bPAREDE(?:S)?\s+(" + "|".join(re.escape(k) for k in _MATERIAL_LABELS) + r")\b",
+            re.IGNORECASE,
+        ),
+        "paredes",
+    ),
+    (
+        re.compile(
+            r"\bTETO(?:S)?\s+(" + "|".join(re.escape(k) for k in _MATERIAL_LABELS) + r")\b",
+            re.IGNORECASE,
+        ),
+        "tetos",
+    ),
+)
+
+# (regex, dependencia, secoes) — ordem importa; padroes mais especificos primeiro.
+_PADROES_DEPENDENCIA: tuple[tuple[re.Pattern[str], str, frozenset[str]], ...] = (
+    (
+        re.compile(r"\bHALL\b.*\bELEV(?:ADOR(?:ES)?|\.\b)|\bHALL\s+ELEV\.", re.IGNORECASE),
+        "Hall elevador",
+        frozenset({"viii"}),
+    ),
+    (re.compile(r"\bSACADA\b", re.IGNORECASE), "Sacada", frozenset({"vii"})),
+    (re.compile(r"\bSALA\b", re.IGNORECASE), "Sala", frozenset({"vii"})),
+    (re.compile(r"\bCOZINHA\b", re.IGNORECASE), "Cozinha", frozenset({"vii"})),
+    (re.compile(r"\bBANHO\b", re.IGNORECASE), "Banho", frozenset({"vii"})),
+    (re.compile(r"\bDORM\b", re.IGNORECASE), "Dorm.", frozenset({"vii"})),
+    (re.compile(r"\bSUITE\b", re.IGNORECASE), "Suite", frozenset({"vii"})),
+    (
+        re.compile(r"\bAREA\s*SERV(?:ICO)?\b", re.IGNORECASE),
+        "Area servico",
+        frozenset({"vii"}),
+    ),
+    (re.compile(r"\bESCADA\b", re.IGNORECASE), "Escada", frozenset({"viii"})),
+    (re.compile(r"\bCIRCULACAO\b", re.IGNORECASE), "Circulacao", frozenset({"viii"})),
+    (re.compile(r"\bCIRC\.?\b", re.IGNORECASE), "Circ.", frozenset({"viii"})),
+    (re.compile(r"\bGARAGEM\b", re.IGNORECASE), "Garagem", frozenset({"viii"})),
+    (re.compile(r"\bLAZER\b", re.IGNORECASE), "Lazer", frozenset({"viii"})),
+    (re.compile(r"\bBARRILETE\b", re.IGNORECASE), "Barrilete", frozenset({"viii"})),
+    (re.compile(r"\bDML\b", re.IGNORECASE), "DML", frozenset({"viii"})),
+    (re.compile(r"\bPISCINA\b", re.IGNORECASE), "Piscina", frozenset({"viii"})),
+    (re.compile(r"\bGOURMET\b", re.IGNORECASE), "Gourmet", frozenset({"viii"})),
+    (re.compile(r"\bHALL\b", re.IGNORECASE), "Hall", frozenset({"viii"})),
 )
 
 _RE_HALL_ELEV_AMBIENTE = re.compile(
@@ -698,6 +781,182 @@ def _linha_ocr_ruim(linha: str) -> bool:
     return nao_alfa / max(len(linha), 1) > 0.55
 
 
+def _normalizar_material_token(token: str) -> str:
+    chave = token.upper().replace("Í", "I").replace("Â", "A")
+    return _MATERIAL_LABELS.get(chave, token.title())
+
+
+def _extrair_materiais_linha(linha: str) -> tuple[list[str], dict[str, list[str]]]:
+    """Retorna lista simples de materiais e mapa por superficie (pisos/paredes/tetos/outros)."""
+    materiais: list[str] = []
+    materiais_contexto: dict[str, list[str]] = {}
+    capturados: set[str] = set()
+
+    for padrao, superficie in _RE_SUPERFICIE_MATERIAL:
+        for match in padrao.finditer(linha):
+            label = _normalizar_material_token(match.group(1))
+            capturados.add(label.lower())
+            materiais_contexto.setdefault(superficie, [])
+            if label not in materiais_contexto[superficie]:
+                materiais_contexto[superficie].append(label)
+            if label not in materiais:
+                materiais.append(label)
+
+    for match in _RE_MATERIAL_TOKEN.finditer(linha):
+        label = _normalizar_material_token(match.group(1))
+        if label.lower() in capturados:
+            continue
+        capturados.add(label.lower())
+        materiais.append(label)
+        materiais_contexto.setdefault("outros", [])
+        if label not in materiais_contexto["outros"]:
+            materiais_contexto["outros"].append(label)
+
+    materiais_contexto = {k: v for k, v in materiais_contexto.items() if v}
+    return materiais, materiais_contexto
+
+
+def _primeira_posicao_material(linha: str) -> int | None:
+    posicoes: list[int] = []
+    for padrao, _ in _RE_SUPERFICIE_MATERIAL:
+        match = padrao.search(linha)
+        if match:
+            posicoes.append(match.start())
+    match = _RE_MATERIAL_TOKEN.search(linha)
+    if match:
+        posicoes.append(match.start())
+    return min(posicoes) if posicoes else None
+
+
+def _dependencias_na_secao(linha: str, secao: str) -> list[tuple[int, int, str]]:
+    """Retorna dependencias encontradas; descarta genericos sobrepostos a padroes especificos."""
+    encontradas: list[tuple[int, int, str]] = []
+    for padrao, dependencia, secoes in _PADROES_DEPENDENCIA:
+        if secao not in secoes:
+            continue
+        match = padrao.search(linha)
+        if not match:
+            continue
+        inicio, fim = match.start(), match.end()
+        if any(
+            (inicio >= exist_inicio and fim <= exist_fim)
+            or (inicio < exist_fim and fim > exist_inicio)
+            for exist_inicio, exist_fim, _ in encontradas
+        ):
+            continue
+        encontradas.append((inicio, fim, dependencia))
+    return encontradas
+
+
+def _extrair_candidato_acabamento(linha: str, secao: str) -> dict | None:
+    """Gera candidato somente com dependencia+material na mesma linha, sem ambiguidade."""
+    if secao not in ("vii", "viii"):
+        return None
+
+    dependencias = _dependencias_na_secao(linha, secao)
+    if len(dependencias) != 1:
+        return None
+
+    dep_inicio, dep_fim, dependencia = dependencias[0]
+    materiais, materiais_contexto = _extrair_materiais_linha(linha)
+    if not materiais:
+        return None
+
+    mat_inicio = _primeira_posicao_material(linha)
+    if mat_inicio is None:
+        return None
+
+    if dep_inicio > mat_inicio:
+        return None
+    if mat_inicio - dep_fim > _MAX_DISTANCIA_DEP_MATERIAL:
+        return None
+
+    if len(linha) > _MAX_LINHA_CANDIDATO and len(materiais) > 3:
+        return None
+
+    quadro = "quadro7" if secao == "vii" else "quadro8"
+    candidato: dict = {
+        "quadro": quadro,
+        "dependencia": dependencia,
+        "materiais": materiais,
+        "linha": linha,
+    }
+    if materiais_contexto:
+        candidato["materiais_contexto"] = materiais_contexto
+    return candidato
+
+
+def _linha_gera_candidato_acabamento(linha: str) -> bool:
+    """True se a linha produz candidato estruturado VII/VIII."""
+    linha = re.sub(r"[ \t]+", " ", linha.strip())
+    if not linha:
+        return False
+    linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
+    for secao in ("vii", "viii"):
+        if _extrair_candidato_acabamento(linha_limpa, secao) is not None:
+            return True
+    return False
+
+
+def _extrair_evidencias_acabamentos_preservar(texto: str) -> str:
+    """Extrai linhas OCR que geram candidatos de acabamento antes do prefiltro cortar."""
+    linhas_preservar: list[str] = []
+    vistos: set[str] = set()
+
+    for linha in texto.splitlines():
+        linha_norm = re.sub(r"[ \t]+", " ", linha.strip())
+        if not linha_norm or linha_norm.startswith("DOCUMENTO:"):
+            continue
+        linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_norm)
+        for secao in ("vii", "viii"):
+            candidato = _extrair_candidato_acabamento(linha_limpa, secao)
+            if candidato is None:
+                continue
+            chave = re.sub(r"\s+", " ", candidato["linha"].lower())
+            if chave in vistos:
+                break
+            vistos.add(chave)
+            linhas_preservar.append(candidato["linha"])
+            break
+
+    if not linhas_preservar:
+        return ""
+    return MARCADOR_EVIDENCIAS_ACABAMENTOS + "\n" + "\n".join(linhas_preservar)
+
+
+def _chave_candidato(candidato: dict) -> str:
+    ctx = candidato.get("materiais_contexto") or {}
+    ctx_txt = json.dumps(ctx, sort_keys=True, ensure_ascii=False)
+    linha = re.sub(r"\s+", " ", candidato["linha"].lower())
+    return (
+        f"{candidato['quadro']}|{candidato['dependencia'].lower()}|"
+        f"{','.join(candidato['materiais']).lower()}|{ctx_txt}|{linha}"
+    )
+
+
+def _formatar_linha_candidato(candidato: dict) -> str:
+    partes = [
+        f"- {candidato['quadro']}",
+        f"dependencia={candidato['dependencia']}",
+        f"materiais={', '.join(candidato['materiais'])}",
+    ]
+    ctx = candidato.get("materiais_contexto")
+    if ctx:
+        partes.append(
+            f"materiais_contexto={json.dumps(ctx, ensure_ascii=False, separators=(',', ':'))}"
+        )
+    partes.append(f"evidencia={candidato['linha']}")
+    return " | ".join(partes)
+
+
+def _montar_bloco_candidatos(candidatos: list[dict]) -> str:
+    if not candidatos:
+        return ""
+    linhas = [MARCADOR_CANDIDATOS_VII_VIII]
+    linhas.extend(_formatar_linha_candidato(c) for c in candidatos)
+    return "\n".join(linhas).strip()
+
+
 def _montar_bloco_vi_viii(
     buckets: dict[str, list[str]],
     *,
@@ -721,12 +980,11 @@ def _montar_bloco_vi_viii(
     return "\n".join(partes).strip()
 
 
-def extrair_evidencias_acabamentos_equipamentos(
+def _coletar_vi_viii_e_candidatos(
     textos: str,
     limite_linhas: int = 80,
     limite_por_secao: int | None = None,
-) -> str:
-    """Seleciona linhas uteis para Quadros VI-VIII, classificadas por secao."""
+) -> tuple[dict[str, list[str]], list[dict]]:
     if limite_por_secao is None:
         limite_por_secao = max(20, limite_linhas // 3)
 
@@ -736,7 +994,9 @@ def extrair_evidencias_acabamentos_equipamentos(
         "vii": [],
         "viii": [],
     }
+    candidatos: list[dict] = []
     vistos: set[str] = set()
+    vistos_candidatos: set[str] = set()
     ordem = 0
 
     for linha in textos.splitlines():
@@ -750,7 +1010,9 @@ def extrair_evidencias_acabamentos_equipamentos(
             doc_atual = m_doc.group(1).strip()
             continue
 
-        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or any(
+        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or linha.startswith(
+            MARCADOR_CANDIDATOS_VII_VIII
+        ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or any(
             linha.startswith(m) for m in _MARCADORES_SUBSECAO
         ):
             continue
@@ -761,11 +1023,19 @@ def extrair_evidencias_acabamentos_equipamentos(
         if _linha_ocr_ruim(linha):
             continue
 
-        linha = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
-        if len(linha) > 320:
-            linha = linha[:317].rstrip() + "..."
+        linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
+        if len(linha_limpa) > 320:
+            linha_limpa = linha_limpa[:317].rstrip() + "..."
 
-        item = f"[{doc_atual}] {linha}" if doc_atual else linha
+        if secao in ("vii", "viii"):
+            candidato = _extrair_candidato_acabamento(linha_limpa, secao)
+            if candidato:
+                chave_c = _chave_candidato(candidato)
+                if chave_c not in vistos_candidatos:
+                    vistos_candidatos.add(chave_c)
+                    candidatos.append(candidato)
+
+        item = f"[{doc_atual}] {linha_limpa}" if doc_atual else linha_limpa
         chave = re.sub(r"\d+", "#", item.lower())
         chave = re.sub(r"\s+", " ", chave).strip()
         if chave in vistos:
@@ -775,13 +1045,41 @@ def extrair_evidencias_acabamentos_equipamentos(
         buckets[secao].append((ordem, item))
 
     resultado: dict[str, list[str]] = {}
-    for secao, candidatos in buckets.items():
-        candidatos.sort(key=lambda x: x[0])
-        resultado[secao] = [
-            item for _, item in candidatos[:limite_por_secao]
-        ]
+    for secao, itens in buckets.items():
+        itens.sort(key=lambda x: x[0])
+        resultado[secao] = [item for _, item in itens[:limite_por_secao]]
 
-    return _montar_bloco_vi_viii(resultado)
+    return resultado, candidatos
+
+
+def extrair_evidencias_acabamentos_equipamentos(
+    textos: str,
+    limite_linhas: int = 80,
+    limite_por_secao: int | None = None,
+) -> str:
+    """Seleciona linhas uteis para Quadros VI-VIII, classificadas por secao."""
+    buckets, _ = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
+    return _montar_bloco_vi_viii(buckets)
+
+
+def extrair_candidatos_acabamentos(
+    textos: str,
+    limite_linhas: int = 80,
+    limite_por_secao: int | None = None,
+) -> list[dict]:
+    """Retorna candidatos dependencia+material (VII/VIII) como list[dict]."""
+    _, candidatos = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
+    return candidatos
+
+
+def extrair_candidatos_acabamentos_estruturados(
+    textos: str,
+    limite_linhas: int = 80,
+    limite_por_secao: int | None = None,
+) -> str:
+    """Gera bloco opcional de candidatos dependencia+material para Quadros VII-VIII."""
+    candidatos = extrair_candidatos_acabamentos(textos, limite_linhas, limite_por_secao)
+    return _montar_bloco_candidatos(candidatos)
 
 
 def _combinar_evidencias_e_corpo(evidencias, corpo, limite_chars):
@@ -836,6 +1134,7 @@ def prefiltrar_texto(texto, verbose=True):
     # Corrige erros sistematicos do Tesseract antes de qualquer filtragem
     texto = normalizar_ocr(texto)
     evidencias_criticas = _extrair_evidencias_nbr(texto)
+    evidencias_acabamentos = _extrair_evidencias_acabamentos_preservar(texto)
 
     # ===== Camada 0.5: Remocao de sequencias repetidas (ruido grafico) =====
     # Caracteres alfabeticos repetidos 4+ vezes (SSSSSS, KKKKKK, aaaa)
@@ -936,6 +1235,14 @@ def prefiltrar_texto(texto, verbose=True):
 
     for linha in linhas:
         linha_strip = linha.strip()
+
+        # Preservar linhas que geram candidatos de acabamento (Quadros VII/VIII)
+        linha_limpa_cand = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_strip)
+        if _linha_gera_candidato_acabamento(linha_limpa_cand):
+            linhas_limpas.append(linha_strip)
+            linha_anterior = linha_strip
+            contador_repeticoes = 0
+            continue
 
         # Pular linhas vazias multiplas
         if not linha_strip:
@@ -1106,8 +1413,16 @@ def prefiltrar_texto(texto, verbose=True):
             blocos_finais.append(bloco)
 
     texto_final = "\n\n".join(blocos_finais)
+    evidencias_preservadas = evidencias_acabamentos
+    if evidencias_criticas:
+        if evidencias_preservadas:
+            evidencias_preservadas = (
+                f"{evidencias_preservadas}\n\n{evidencias_criticas.strip()}"
+            )
+        else:
+            evidencias_preservadas = evidencias_criticas.strip()
     texto_final = _combinar_evidencias_e_corpo(
-        evidencias_criticas,
+        evidencias_preservadas,
         texto_final,
         LIMITE_CHARS_TEXTO_FILTRADO,
     )
@@ -1126,8 +1441,9 @@ def prefiltrar_texto(texto, verbose=True):
             reducao_total,
         )
     logger.debug(
-        "Pre-filtragem detalhada: evidencias=%s chars | blocos=%s | relevantes=%s | finais=%s",
+        "Pre-filtragem detalhada: evidencias=%s chars | acabamentos=%s chars | blocos=%s | relevantes=%s | finais=%s",
         len(evidencias_criticas),
+        len(evidencias_acabamentos),
         len(blocos),
         len(blocos_relevantes),
         len(blocos_finais),

@@ -27,6 +27,7 @@ from .identity import (
 )
 from .missing import _computar_dados_faltantes
 from .quadro5 import _preencher_quadro5
+from .quadro8 import _preencher_quadro8
 from .schema import _esqueleto_vazio
 from .units import (
     _extrair_num_pavimentos,
@@ -112,6 +113,13 @@ def extrair_dados_deterministico(texto: str) -> dict:
     )
 
     _preencher_quadro5(dados, texto)
+    _preencher_quadro8(dados, texto)
+    n_acabamentos = sum(
+        1
+        for item in dados["quadro8"]["acabamentos"]
+        if isinstance(item, dict) and str(item.get("dependencia", "")).strip()
+    )
+    logger.info("Quadro VIII: acabamentos=%s", n_acabamentos)
     dados["_dados_faltantes"] = _computar_dados_faltantes(dados, texto)
     logger.info(
         "Extrator deterministico finalizado | faltantes=%s | %.2fs",

@@ -11,11 +11,13 @@ from ..settings.config import (
     caminho_saida,
 )
 from ..documents.pdf_processing import (
+    MARCADOR_CANDIDATOS_VII_VIII,
     MARCADOR_EVIDENCIAS_VI_VIII,
     MARCADOR_QUADRO_VI,
     MARCADOR_QUADRO_VII,
     MARCADOR_QUADRO_VIII,
     dividir_lotes_documentos,
+    extrair_candidatos_acabamentos_estruturados,
     extrair_evidencias_acabamentos_equipamentos,
     separar_documentos,
 )
@@ -140,24 +142,97 @@ def _truncar_bloco_vi_viii(bloco: str, limite_chars: int) -> str:
             return esqueleto
 
 
+def _separar_evidencias_e_candidatos(bloco: str) -> tuple[str, str]:
+    """Separa bloco bruto VI-VIII do bloco de candidatos estruturados."""
+    bloco = bloco.strip()
+    if not bloco:
+        return "", ""
+    idx = bloco.find(MARCADOR_CANDIDATOS_VII_VIII)
+    if idx < 0:
+        return bloco, ""
+    raw = bloco[:idx].strip()
+    candidatos = bloco[idx:].strip()
+    return raw, candidatos
+
+
+def _truncar_bloco_candidatos(bloco: str, limite_chars: int) -> str:
+    """Remove linhas de candidato do fim; preserva cabecalho."""
+    bloco = bloco.strip()
+    if len(bloco) <= limite_chars:
+        return bloco
+    if not bloco.startswith(MARCADOR_CANDIDATOS_VII_VIII):
+        return bloco[:limite_chars]
+
+    linhas = bloco.splitlines()
+    cabecalho = linhas[0]
+    itens = [linha for linha in linhas[1:] if linha.strip().startswith("-")]
+    while itens:
+        reconstruido = "\n".join([cabecalho, *itens]).strip()
+        if len(reconstruido) <= limite_chars:
+            return reconstruido
+        itens.pop()
+    return cabecalho
+
+
+def _truncar_bloco_patch_completo(raw: str, candidatos: str, limite_chars: int) -> str:
+    """Prioriza candidatos estruturados; corta evidencias brutas VI-VIII antes."""
+    sep = "\n\n"
+    raw = raw.strip()
+    candidatos = candidatos.strip()
+
+    if not raw and not candidatos:
+        return ""
+    if not candidatos:
+        return _truncar_bloco_vi_viii(raw, limite_chars) if raw else ""
+
+    if len(candidatos) >= limite_chars:
+        return _truncar_bloco_candidatos(candidatos, limite_chars)
+
+    cand_reservado = candidatos
+    raw_limite = limite_chars - len(cand_reservado) - (len(sep) if raw else 0)
+    raw_trunc = _truncar_bloco_vi_viii(raw, raw_limite) if raw and raw_limite > 0 else ""
+
+    if raw_trunc:
+        bloco = f"{raw_trunc}{sep}{cand_reservado}"
+    else:
+        bloco = cand_reservado
+
+    if len(bloco) <= limite_chars:
+        return bloco.strip()
+
+    cand_limite = max(len(MARCADOR_CANDIDATOS_VII_VIII), limite_chars - len(raw_trunc) - len(sep))
+    cand_trunc = _truncar_bloco_candidatos(cand_reservado, cand_limite)
+    if raw_trunc:
+        return f"{raw_trunc}{sep}{cand_trunc}".strip()
+    return cand_trunc
+
+
 def _anexar_evidencias_patch(
     texto_resumido: str,
     evidencias: str,
     limite_chars: int = LIMITE_CHARS_PROMPT_FINAL,
 ) -> str:
-    """Anexa bloco de evidencias ao prompt de patch; preserva estrutura VI-VIII."""
+    """Anexa bloco de evidencias ao prompt de patch; prioriza candidatos estruturados."""
     if not evidencias or not evidencias.strip():
         return texto_resumido
-    bloco = evidencias.strip()
-    combinado = f"{texto_resumido}\n\n{bloco}"
+
+    raw, candidatos = _separar_evidencias_e_candidatos(evidencias.strip())
+    sep = "\n\n"
+    bloco = raw
+    if candidatos:
+        bloco = f"{raw}{sep}{candidatos}".strip() if raw else candidatos
+
+    combinado = f"{texto_resumido}{sep}{bloco}"
     if len(combinado) <= limite_chars:
         return combinado
-    bloco = _truncar_bloco_vi_viii(bloco, limite_chars)
-    reserva = len(bloco) + 2
+
+    bloco_limite = limite_chars
+    bloco = _truncar_bloco_patch_completo(raw, candidatos, bloco_limite)
+    reserva = len(bloco) + len(sep)
     if reserva >= limite_chars:
         return bloco
     cabeca_max = limite_chars - reserva
-    return f"{texto_resumido[:cabeca_max].rstrip()}\n\n{bloco}"
+    return f"{texto_resumido[:cabeca_max].rstrip()}{sep}{bloco}"
 
 
 async def _resumir_lotes_documentos(textos):
@@ -241,7 +316,11 @@ async def gerar_patch_llm(
         return {"patch": [], "nao_encontrado": ["llm_indisponivel"]}
 
     evidencias_vi_viii = extrair_evidencias_acabamentos_equipamentos(textos)
-    texto_resumido = _anexar_evidencias_patch(texto_resumido, evidencias_vi_viii)
+    candidatos = extrair_candidatos_acabamentos_estruturados(textos)
+    bloco_patch = evidencias_vi_viii
+    if candidatos:
+        bloco_patch = f"{evidencias_vi_viii}\n\n{candidatos}".strip()
+    texto_resumido = _anexar_evidencias_patch(texto_resumido, bloco_patch)
 
     avisos = validacao.get("avisos_semanticos", [])
     avisos_txt = "\n".join(f"- {a}" for a in avisos) if avisos else "(nenhum)"
