@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "extrair_evidencias_acabamentos_equipamentos",
+    "extrair_candidatos_equipamentos",
     "extrair_candidatos_acabamentos",
     "extrair_candidatos_acabamentos_estruturados",
     "extrair_texto_pdf",
@@ -643,6 +644,7 @@ def _extrair_evidencias_nbr(texto, limite_linhas=100):
 
 MARCADOR_EVIDENCIAS_VI_VIII = "EVIDENCIAS QUADROS VI-VIII:"
 MARCADOR_EVIDENCIAS_ACABAMENTOS = "EVIDENCIAS ACABAMENTOS QUADROS VII-VIII:"
+MARCADOR_EVIDENCIAS_EQUIPAMENTOS = "EVIDENCIAS EQUIPAMENTOS QUADRO VI:"
 MARCADOR_CANDIDATOS_VII_VIII = "CANDIDATOS ESTRUTURADOS QUADROS VII-VIII:"
 MARCADOR_QUADRO_VI = "[QUADRO VI - EQUIPAMENTOS]"
 MARCADOR_QUADRO_VII = "[QUADRO VII - ACABAMENTOS PRIVATIVOS]"
@@ -656,6 +658,38 @@ _MARCADORES_SUBSECAO = (
 
 _MAX_DISTANCIA_DEP_MATERIAL = 120
 _MAX_LINHA_CANDIDATO = 220
+_MAX_DETALHES_EQUIPAMENTO = 180
+
+_RE_ELEVADOR_TAG = re.compile(r"\bELEVADOR\d+\b", re.IGNORECASE)
+_RE_ELEVADOR_NUM = re.compile(r"\bELEVADOR\s+\d+\b", re.IGNORECASE)
+_RE_ELEVADORES = re.compile(r"\bELEVADORES\b", re.IGNORECASE)
+_RE_ELEVADOR_AREA = re.compile(
+    r"\bELEVADOR\s+\d+[,.]\d+\s*m(?:²|2)\b",
+    re.IGNORECASE,
+)
+_RE_LINHA_ADMIN_EQUIPAMENTO = re.compile(
+    r"\b(?:DATA\s+PROCEDIMENTO|PROCEDIMENTO|ENTREGA|PREC[AÁ]RI[OA]|T[IÍ]TULO\s+PREC)\b",
+    re.IGNORECASE,
+)
+_RE_GAS_EQUIPAMENTO = re.compile(
+    r"\b(?:"
+    r"DEP\.?\s*(?:DE\s+)?G[ÁA]S"
+    r"|DEP[ÓO]SITO\s+DE\s+G[ÁA]S"
+    r"|DER[ÓO]SITO\s+DE\s+G[ÁA]S"
+    r"|INSTALA[ÇC][ÃA]O\s+DE\s+G[ÁA]S"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PADROES_EQUIPAMENTO: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bBOMBA\b.*\bRECALQUE\b", re.IGNORECASE), "Bomba de recalque"),
+    (re.compile(r"\bBOMBA\s+RECALQUE\b", re.IGNORECASE), "Bomba de recalque"),
+    (re.compile(r"\bBOMBA\b", re.IGNORECASE), "Bomba"),
+    (re.compile(r"\bPRESSURIZA[CÇ][AÃ]O\b", re.IGNORECASE), "Sistema de pressurização"),
+    (re.compile(r"\bPRESSUR\b", re.IGNORECASE), "Sistema de pressurização"),
+    (re.compile(r"\bRESERVAT[OÓ]RIO\b", re.IGNORECASE), "Reservatório"),
+    (re.compile(r"\bMEDIDORES?\b", re.IGNORECASE), "Medidores"),
+)
 
 _MATERIAL_LABELS: dict[str, str] = {
     "PORCELANATO": "Porcelanato",
@@ -886,6 +920,61 @@ def _extrair_candidato_acabamento(linha: str, secao: str) -> dict | None:
     return candidato
 
 
+def _linha_elevador_equipamento_rejeitada(linha: str) -> bool:
+    if _RE_ELEVADOR_AREA.search(linha):
+        return True
+    if _RE_LINHA_ADMIN_EQUIPAMENTO.search(linha):
+        return True
+    if re.search(r"\bELEVADOR\s+\d{6,}\b", linha, re.IGNORECASE) and not _RE_ELEVADOR_TAG.search(
+        linha
+    ):
+        return True
+    return False
+
+
+def _nome_equipamento_na_linha(linha: str) -> str | None:
+    if not _linha_elevador_equipamento_rejeitada(linha) and (
+        _RE_ELEVADOR_TAG.search(linha)
+        or _RE_ELEVADOR_NUM.search(linha)
+        or _RE_ELEVADORES.search(linha)
+    ):
+        return "Elevador"
+    if _RE_GAS_EQUIPAMENTO.search(linha):
+        return "Instalação de gás"
+    for padrao, nome in _PADROES_EQUIPAMENTO:
+        if padrao.search(linha):
+            return nome
+    return None
+
+
+def _extrair_candidato_equipamento(linha: str) -> dict | None:
+    """Gera candidato de equipamento somente com evidencia explicita na linha."""
+    if _RE_HALL_ELEV_AMBIENTE.search(linha):
+        return None
+
+    linha = re.sub(r"[ \t]+", " ", linha.strip())
+    if not linha:
+        return None
+
+    nome = _nome_equipamento_na_linha(linha)
+    if not nome:
+        return None
+
+    detalhes = linha[:_MAX_DETALHES_EQUIPAMENTO].rstrip()
+    return {
+        "nome": nome,
+        "tipo": "",
+        "acabamento": "",
+        "detalhes": detalhes,
+        "linha": detalhes,
+    }
+
+
+def _chave_candidato_equipamento(candidato: dict) -> str:
+    linha = re.sub(r"\s+", " ", candidato.get("linha", "").lower())
+    return f"{candidato['nome'].lower()}|{linha}"
+
+
 def _linha_gera_candidato_acabamento(linha: str) -> bool:
     """True se a linha produz candidato estruturado VII/VIII."""
     linha = re.sub(r"[ \t]+", " ", linha.strip())
@@ -896,6 +985,51 @@ def _linha_gera_candidato_acabamento(linha: str) -> bool:
         if _extrair_candidato_acabamento(linha_limpa, secao) is not None:
             return True
     return False
+
+
+def _linha_gera_candidato_equipamento(linha: str) -> bool:
+    """True se a linha produz candidato estruturado de equipamento (Quadro VI)."""
+    linha = re.sub(r"[ \t]+", " ", linha.strip())
+    if not linha:
+        return False
+    linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
+    return _extrair_candidato_equipamento(linha_limpa) is not None
+
+
+def _extrair_evidencias_equipamentos_preservar(texto: str) -> str:
+    """Extrai linhas OCR que geram candidatos de equipamento antes do prefiltro cortar."""
+    linhas_preservar: list[str] = []
+    vistos: set[str] = set()
+
+    for linha in texto.splitlines():
+        linha_norm = re.sub(r"[ \t]+", " ", linha.strip())
+        if not linha_norm or linha_norm.startswith("DOCUMENTO:"):
+            continue
+        linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_norm)
+        candidato = _extrair_candidato_equipamento(linha_limpa)
+        if candidato is None:
+            continue
+        chave = _chave_candidato_equipamento(candidato)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        linhas_preservar.append(candidato["linha"])
+
+    if not linhas_preservar:
+        return ""
+    return MARCADOR_EVIDENCIAS_EQUIPAMENTOS + "\n" + "\n".join(linhas_preservar)
+
+
+def _extrair_evidencias_quadros_vi_viii_preservar(texto: str) -> str:
+    """Preserva linhas de equipamentos (VI) e acabamentos (VII/VIII) antes do prefiltro."""
+    partes: list[str] = []
+    equipamentos = _extrair_evidencias_equipamentos_preservar(texto)
+    acabamentos = _extrair_evidencias_acabamentos_preservar(texto)
+    if equipamentos:
+        partes.append(equipamentos)
+    if acabamentos:
+        partes.append(acabamentos)
+    return "\n\n".join(partes)
 
 
 def _extrair_evidencias_acabamentos_preservar(texto: str) -> str:
@@ -984,7 +1118,7 @@ def _coletar_vi_viii_e_candidatos(
     textos: str,
     limite_linhas: int = 80,
     limite_por_secao: int | None = None,
-) -> tuple[dict[str, list[str]], list[dict]]:
+) -> tuple[dict[str, list[str]], list[dict], list[dict]]:
     if limite_por_secao is None:
         limite_por_secao = max(20, limite_linhas // 3)
 
@@ -994,9 +1128,11 @@ def _coletar_vi_viii_e_candidatos(
         "vii": [],
         "viii": [],
     }
-    candidatos: list[dict] = []
+    candidatos_acabamento: list[dict] = []
+    candidatos_equipamento: list[dict] = []
     vistos: set[str] = set()
-    vistos_candidatos: set[str] = set()
+    vistos_candidatos_acab: set[str] = set()
+    vistos_candidatos_equip: set[str] = set()
     ordem = 0
 
     for linha in textos.splitlines():
@@ -1012,9 +1148,9 @@ def _coletar_vi_viii_e_candidatos(
 
         if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or linha.startswith(
             MARCADOR_CANDIDATOS_VII_VIII
-        ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or any(
-            linha.startswith(m) for m in _MARCADORES_SUBSECAO
-        ):
+        ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or linha.startswith(
+            MARCADOR_EVIDENCIAS_EQUIPAMENTOS
+        ) or any(linha.startswith(m) for m in _MARCADORES_SUBSECAO):
             continue
 
         secao = _classificar_linha_vi_viii(linha)
@@ -1031,9 +1167,17 @@ def _coletar_vi_viii_e_candidatos(
             candidato = _extrair_candidato_acabamento(linha_limpa, secao)
             if candidato:
                 chave_c = _chave_candidato(candidato)
-                if chave_c not in vistos_candidatos:
-                    vistos_candidatos.add(chave_c)
-                    candidatos.append(candidato)
+                if chave_c not in vistos_candidatos_acab:
+                    vistos_candidatos_acab.add(chave_c)
+                    candidatos_acabamento.append(candidato)
+
+        if secao == "vi":
+            candidato_equip = _extrair_candidato_equipamento(linha_limpa)
+            if candidato_equip:
+                chave_e = _chave_candidato_equipamento(candidato_equip)
+                if chave_e not in vistos_candidatos_equip:
+                    vistos_candidatos_equip.add(chave_e)
+                    candidatos_equipamento.append(candidato_equip)
 
         item = f"[{doc_atual}] {linha_limpa}" if doc_atual else linha_limpa
         chave = re.sub(r"\d+", "#", item.lower())
@@ -1049,7 +1193,7 @@ def _coletar_vi_viii_e_candidatos(
         itens.sort(key=lambda x: x[0])
         resultado[secao] = [item for _, item in itens[:limite_por_secao]]
 
-    return resultado, candidatos
+    return resultado, candidatos_acabamento, candidatos_equipamento
 
 
 def extrair_evidencias_acabamentos_equipamentos(
@@ -1058,7 +1202,7 @@ def extrair_evidencias_acabamentos_equipamentos(
     limite_por_secao: int | None = None,
 ) -> str:
     """Seleciona linhas uteis para Quadros VI-VIII, classificadas por secao."""
-    buckets, _ = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
+    buckets, _, _ = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
     return _montar_bloco_vi_viii(buckets)
 
 
@@ -1068,7 +1212,17 @@ def extrair_candidatos_acabamentos(
     limite_por_secao: int | None = None,
 ) -> list[dict]:
     """Retorna candidatos dependencia+material (VII/VIII) como list[dict]."""
-    _, candidatos = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
+    _, candidatos, _ = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
+    return candidatos
+
+
+def extrair_candidatos_equipamentos(
+    textos: str,
+    limite_linhas: int = 80,
+    limite_por_secao: int | None = None,
+) -> list[dict]:
+    """Retorna candidatos de equipamento (Quadro VI) como list[dict]."""
+    _, _, candidatos = _coletar_vi_viii_e_candidatos(textos, limite_linhas, limite_por_secao)
     return candidatos
 
 
@@ -1134,7 +1288,7 @@ def prefiltrar_texto(texto, verbose=True):
     # Corrige erros sistematicos do Tesseract antes de qualquer filtragem
     texto = normalizar_ocr(texto)
     evidencias_criticas = _extrair_evidencias_nbr(texto)
-    evidencias_acabamentos = _extrair_evidencias_acabamentos_preservar(texto)
+    evidencias_quadros_vi_viii = _extrair_evidencias_quadros_vi_viii_preservar(texto)
 
     # ===== Camada 0.5: Remocao de sequencias repetidas (ruido grafico) =====
     # Caracteres alfabeticos repetidos 4+ vezes (SSSSSS, KKKKKK, aaaa)
@@ -1236,9 +1390,11 @@ def prefiltrar_texto(texto, verbose=True):
     for linha in linhas:
         linha_strip = linha.strip()
 
-        # Preservar linhas que geram candidatos de acabamento (Quadros VII/VIII)
+        # Preservar linhas que geram candidatos de acabamento ou equipamento
         linha_limpa_cand = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_strip)
-        if _linha_gera_candidato_acabamento(linha_limpa_cand):
+        if _linha_gera_candidato_acabamento(linha_limpa_cand) or _linha_gera_candidato_equipamento(
+            linha_limpa_cand
+        ):
             linhas_limpas.append(linha_strip)
             linha_anterior = linha_strip
             contador_repeticoes = 0
@@ -1413,7 +1569,7 @@ def prefiltrar_texto(texto, verbose=True):
             blocos_finais.append(bloco)
 
     texto_final = "\n\n".join(blocos_finais)
-    evidencias_preservadas = evidencias_acabamentos
+    evidencias_preservadas = evidencias_quadros_vi_viii
     if evidencias_criticas:
         if evidencias_preservadas:
             evidencias_preservadas = (
@@ -1441,9 +1597,9 @@ def prefiltrar_texto(texto, verbose=True):
             reducao_total,
         )
     logger.debug(
-        "Pre-filtragem detalhada: evidencias=%s chars | acabamentos=%s chars | blocos=%s | relevantes=%s | finais=%s",
+        "Pre-filtragem detalhada: evidencias=%s chars | quadros_vi_viii=%s chars | blocos=%s | relevantes=%s | finais=%s",
         len(evidencias_criticas),
-        len(evidencias_acabamentos),
+        len(evidencias_quadros_vi_viii),
         len(blocos),
         len(blocos_relevantes),
         len(blocos_finais),

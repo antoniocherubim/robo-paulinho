@@ -27,6 +27,7 @@ from .identity import (
 )
 from .missing import _computar_dados_faltantes
 from .quadro5 import _preencher_quadro5
+from .quadro6 import _preencher_quadro6
 from .quadro8 import _preencher_quadro8
 from .schema import _esqueleto_vazio
 from .units import (
@@ -113,7 +114,14 @@ def extrair_dados_deterministico(texto: str) -> dict:
     )
 
     _preencher_quadro5(dados, texto)
+    _preencher_quadro6(dados, texto)
     _preencher_quadro8(dados, texto)
+    n_equipamentos = sum(
+        1
+        for item in dados["quadro6"]["equipamentos"]
+        if isinstance(item, dict) and str(item.get("nome", "")).strip()
+    )
+    logger.info("Quadro VI: equipamentos=%s", n_equipamentos)
     n_acabamentos = sum(
         1
         for item in dados["quadro8"]["acabamentos"]

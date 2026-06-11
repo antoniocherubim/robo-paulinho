@@ -84,6 +84,92 @@ BARRILETE PISO CIMENTADO
         self.assertIn("Escada", deps_q8)
         self.assertIn("Circ.", deps_q8)
 
+    def test_extrai_candidatos_equipamentos_elevador(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_equipamentos
+
+        candidatos = extrair_candidatos_equipamentos("ELEVADOR01 ELEVADOR02")
+        self.assertEqual(len(candidatos), 1)
+        self.assertEqual(candidatos[0]["nome"], "Elevador")
+        self.assertIn("ELEVADOR01", candidatos[0]["detalhes"])
+        self.assertIn("ELEVADOR02", candidatos[0]["detalhes"])
+
+    def test_candidatos_equipamentos_nao_usa_hall_elevador(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_equipamentos
+
+        candidatos = extrair_candidatos_equipamentos("HALL ELEVADOR PISO PORCELANATO")
+        self.assertEqual(candidatos, [])
+
+    def test_extrai_candidatos_bomba_recalque(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_equipamentos
+
+        candidatos = extrair_candidatos_equipamentos("BOMBA RECALQUE")
+        self.assertEqual(len(candidatos), 1)
+        self.assertEqual(candidatos[0]["nome"], "Bomba de recalque")
+
+    def test_candidatos_equipamentos_rejeita_elevador_area_e_admin(self):
+        from nbr12721.documents.pdf_processing import extrair_candidatos_equipamentos
+
+        for linha in (
+            "ELEVADOR 15,59m²",
+            "DATA PROCEDIMENTO VAZIO ELEVADOR 24072023 ENTREGA-R00",
+        ):
+            with self.subTest(linha=linha):
+                self.assertEqual(extrair_candidatos_equipamentos(linha), [])
+
+    def test_quadro6_agrega_linhas_repetidas_ocr(self):
+        from nbr12721.extraction.deterministic_extraction.extractor import (
+            extrair_dados_deterministico,
+        )
+
+        texto = "\n".join(
+            [
+                "O DEP. DE LIXO, DEP. GÁS E PORTARIA 02 SÃO A TÍTULO PRECÁRIO",
+                "ODEP. DE LIXO, DEP. GÁS E PORTARIA 02 SÃO A TÍTULO PRECÁRIO",
+                "ELEVADOR01 ELEVADOR02",
+                "ELEVADOR03 09 10 11",
+                "VAZIO VAZIO ELEVADOR01 ELEVADOR02",
+            ]
+        )
+        dados = extrair_dados_deterministico(texto)
+        gas = [i for i in dados["quadro6"]["equipamentos"] if i["nome"] == "Instalação de gás"]
+        elev = [i for i in dados["quadro6"]["equipamentos"] if i["nome"] == "Elevador"]
+        self.assertEqual(len(gas), 1)
+        self.assertEqual(len(elev), 1)
+        self.assertIn("ELEVADOR01/ELEVADOR02/ELEVADOR03", elev[0]["detalhes"])
+
+    def test_prefiltro_preserva_linhas_candidatos_quadro6(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_EVIDENCIAS_EQUIPAMENTOS,
+            extrair_candidatos_equipamentos,
+        )
+        from nbr12721.extraction.deterministic_extraction.extractor import (
+            extrair_dados_deterministico,
+        )
+
+        ruido = "\n".join("240x480 240x480 JANELA PORTA" for _ in range(120))
+        texto = f"""
+========================================
+DOCUMENTO: memorial.pdf
+========================================
+{ruido}
+ELEVADOR01 ELEVADOR02
+{ruido}
+"""
+        filtrado = prefiltrar_texto(texto, verbose=False)
+        self.assertIn(MARCADOR_EVIDENCIAS_EQUIPAMENTOS, filtrado)
+        self.assertIn("ELEVADOR01", filtrado)
+
+        candidatos = extrair_candidatos_equipamentos(filtrado)
+        self.assertEqual(len(candidatos), 1)
+        self.assertEqual(candidatos[0]["nome"], "Elevador")
+
+        dados = extrair_dados_deterministico(filtrado)
+        elevadores = [
+            i for i in dados["quadro6"]["equipamentos"] if i.get("nome") == "Elevador"
+        ]
+        self.assertEqual(len(elevadores), 1)
+        self.assertIn("ELEVADOR01", elevadores[0]["detalhes"])
+
     def test_extrai_evidencias_acabamentos_equipamentos(self):
         from nbr12721.documents.pdf_processing import (
             MARCADOR_EVIDENCIAS_VI_VIII,

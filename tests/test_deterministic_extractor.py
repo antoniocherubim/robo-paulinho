@@ -615,6 +615,84 @@ COBERTURA - ÁREA: 250,00 m²
             ["Pavimento térreo", "Pavimentos tipo", "Cobertura"],
         )
 
+    def test_quadro6_preenche_elevador_deterministico(self):
+        dados = extrair_dados_deterministico("ELEVADOR01 ELEVADOR02")
+        item = dados["quadro6"]["equipamentos"][0]
+        self.assertEqual(item["nome"], "Elevador")
+        self.assertIn("ELEVADOR01", item["detalhes"])
+        self.assertIn("ELEVADOR02", item["detalhes"])
+        self.assertIn("citados", item["detalhes"])
+        self.assertEqual(item["tipo"], "")
+        self.assertEqual(item["acabamento"], "")
+
+    def test_quadro6_nao_preenche_hall_elevador_como_equipamento(self):
+        dados = extrair_dados_deterministico("HALL ELEVADOR PISO PORCELANATO")
+        item = dados["quadro6"]["equipamentos"][0]
+        self.assertEqual(item["nome"], "")
+
+    def test_quadro6_sem_template_vazio_na_validacao(self):
+        from nbr12721.extraction.validation import validar_dados_extraidos
+        from test_validation import _dados_minimos_completos
+
+        from nbr12721.extraction.deterministic_extraction.quadro6 import (
+            _preencher_quadro6,
+        )
+
+        dados = _dados_minimos_completos()
+        dados["quadro6"]["equipamentos"] = [
+            {"nome": "", "tipo": "", "acabamento": "", "detalhes": ""}
+        ]
+        dados["quadro7"]["acabamentos"] = [
+            {
+                "dependencia": "",
+                "pisos": "",
+                "paredes": "",
+                "tetos": "",
+                "outros": "",
+            }
+        ]
+        _preencher_quadro6(dados, "ELEVADOR01 ELEVADOR02")
+        resultado = validar_dados_extraidos(dados)
+        avisos = resultado["avisos_semanticos"]
+        self.assertNotIn("quadro6.equipamentos.template_vazio", avisos)
+        self.assertIn("quadro7.acabamentos.template_vazio", avisos)
+
+    def test_quadro6_agrega_multiplas_linhas_elevador(self):
+        dados = extrair_dados_deterministico(
+            "\n".join(
+                [
+                    "ELEVADOR01 ELEVADOR02",
+                    "ELEVADOR03 09 10",
+                    "VAZIO VAZIO ELEVADOR01 ELEVADOR02 VAZIO",
+                ]
+            )
+        )
+        elevadores = [
+            item
+            for item in dados["quadro6"]["equipamentos"]
+            if item.get("nome") == "Elevador"
+        ]
+        self.assertEqual(len(elevadores), 1)
+        self.assertIn("ELEVADOR01/ELEVADOR02/ELEVADOR03", elevadores[0]["detalhes"])
+
+    def test_quadro6_agrega_gas_uma_entrada(self):
+        dados = extrair_dados_deterministico(
+            "\n".join(
+                [
+                    "O DEP. DE LIXO, DEP. GÁS E PORTARIA 02",
+                    "DEP. DE GÁS E PORTARIA",
+                    "INSTALAÇÃO DE GÁS",
+                ]
+            )
+        )
+        gas = [
+            item
+            for item in dados["quadro6"]["equipamentos"]
+            if item.get("nome") == "Instalação de gás"
+        ]
+        self.assertEqual(len(gas), 1)
+        self.assertIn("citada no memorial", gas[0]["detalhes"])
+
     def test_quadro8_escada_cimentado(self):
         dados = extrair_dados_deterministico("ESCADA VAZIODUTO CIMENTADO")
         item = dados["quadro8"]["acabamentos"][0]

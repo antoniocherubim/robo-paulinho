@@ -290,6 +290,11 @@ pavimentos tipo não idênticos ou áreas comuns distribuídas por pavimento.
 
 Além da completude estrutural, o sistema sinaliza campos que parecem lixo OCR ou
 templates vazios nos Quadros VI, VII e VIII.
+O **Quadro VI** possui preenchimento determinístico conservador para equipamentos
+explicitamente citados no OCR (elevadores, bombas, reservatórios, gás etc.).
+Campos `tipo` e `acabamento` permanecem vazios sem evidência explícita.
+A LLM continua podendo auxiliar no enriquecimento textual, mas não deve inventar
+equipamentos sem evidência.
 Esses avisos **não impedem** o preenchimento da planilha por padrão.
 Eles servem para revisão humana antes de considerar a planilha final confiável.
 CUB incompatível com o porte do empreendimento também entra como aviso semântico,
