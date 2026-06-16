@@ -293,6 +293,16 @@ templates vazios nos Quadros VI, VII e VIII.
 O **Quadro VI** possui preenchimento determinístico conservador para equipamentos
 explicitamente citados no OCR (elevadores, bombas, reservatórios, gás etc.).
 Campos `tipo` e `acabamento` permanecem vazios sem evidência explícita.
+O **Quadro VII** possui preenchimento determinístico parcial para acabamentos
+privativos quando dependência e material aparecem explicitamente na mesma linha OCR
+ou em janela curta de duas linhas consecutivas (dependência + material na linha
+seguinte), incluindo materiais colados como `LAMINADODEMADEIRA`. Materiais sem
+`PISO`/`PAREDE`/`TETO` vão para `outros`. Cobertura parcial — revisão técnica
+obrigatória; casos OCR mais complexos continuam dependentes de LLM ou revisão manual.
+Como a ordem textual de plantas não preserva a geometria, `BWC` e `BANHO` só
+recebem acabamento quando o material aparece explicitamente na mesma linha.
+Associações por janela curta seguem evidência OCR, não plausibilidade de engenharia
+(ex.: `BWC` + laminado na linha seguinte pode exigir correção manual na planilha).
 A LLM continua podendo auxiliar no enriquecimento textual, mas não deve inventar
 equipamentos sem evidência.
 Esses avisos **não impedem** o preenchimento da planilha por padrão.

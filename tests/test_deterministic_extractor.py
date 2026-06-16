@@ -724,13 +724,87 @@ COBERTURA - ÁREA: 250,00 m²
         self.assertEqual(item["dependencia"], "")
         self.assertEqual(item["outros"], "")
 
-    def test_quadro7_permance_vazio_com_candidato_privativo(self):
+    def test_quadro7_preenche_sala_com_contexto_piso_parede(self):
         dados = extrair_dados_deterministico(
             "APTO01 SALA PISO PORCELANATO PAREDE PINTURA"
         )
         item7 = dados["quadro7"]["acabamentos"][0]
-        self.assertEqual(item7["dependencia"], "")
-        self.assertEqual(item7["pisos"], "")
+        self.assertEqual(item7["dependencia"], "Sala")
+        self.assertEqual(item7["pisos"], "Porcelanato")
+        self.assertEqual(item7["paredes"], "Pintura")
+        self.assertEqual(item7["outros"], "")
+
+    def test_quadro7_preenche_estar_jantar_laminado_madeira(self):
+        dados = extrair_dados_deterministico(
+            "ESTARJANTAR 7,74M2 PJ1 LAMINADODEMADEIRA PM1"
+        )
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "Estar/jantar")
+        self.assertEqual(item["outros"], "Laminado de madeira")
+        self.assertEqual(item["pisos"], "")
+
+    def test_quadro7_preenche_sacada_janela_ocr(self):
+        dados = extrair_dados_deterministico("SACADA\nLAMINADODEMADEIRA")
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "Sacada")
+        self.assertEqual(item["outros"], "Laminado de madeira")
+
+    def test_quadro7_preenche_estar_jantar_janela_ocr(self):
+        dados = extrair_dados_deterministico(
+            "ESTARJANTAR\n7,74M2 PJ1 LAMINADODEMADEIRA PM1"
+        )
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "Estar/jantar")
+        self.assertEqual(item["outros"], "Laminado de madeira")
+
+    def test_quadro7_preenche_bwc_contexto_piso_parede(self):
+        dados = extrair_dados_deterministico("BWC PISO PORCELANATO PAREDE PINTURA")
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "BWC")
+        self.assertEqual(item["pisos"], "Porcelanato")
+        self.assertEqual(item["paredes"], "Pintura")
+        self.assertEqual(item["outros"], "")
+
+    def test_quadro7_nao_associa_bwc_a_material_da_linha_seguinte(self):
+        dados = extrair_dados_deterministico("BWC\nLAMINADODEMADEIRA 2,70M2")
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "")
+        self.assertEqual(item["outros"], "")
+
+    def test_quadro7_sem_template_vazio_na_validacao(self):
+        from nbr12721.extraction.validation import validar_dados_extraidos
+        from test_validation import _dados_minimos_completos
+
+        from nbr12721.extraction.deterministic_extraction.quadro7 import (
+            _preencher_quadro7,
+        )
+
+        dados = _dados_minimos_completos()
+        dados["quadro7"]["acabamentos"] = [
+            {
+                "dependencia": "",
+                "pisos": "",
+                "paredes": "",
+                "tetos": "",
+                "outros": "",
+            }
+        ]
+        _preencher_quadro7(dados, "ESTARJANTAR 7,74M2 PJ1 LAMINADODEMADEIRA PM1")
+        resultado = validar_dados_extraidos(dados)
+        avisos = resultado["avisos_semanticos"]
+        self.assertNotIn("quadro7.acabamentos.template_vazio", avisos)
+
+    def test_quadro7_nao_preenche_linha_ambigua(self):
+        dados = extrair_dados_deterministico("SACADA SALA LAMINADODEMADEIRA")
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "")
+        self.assertEqual(item["outros"], "")
+
+    def test_sacada_isolado_nao_preenche_quadro7(self):
+        dados = extrair_dados_deterministico("SACADA")
+        item = dados["quadro7"]["acabamentos"][0]
+        self.assertEqual(item["dependencia"], "")
+        self.assertEqual(item["outros"], "")
 
     def test_quadro8_sem_template_vazio_na_validacao(self):
         from nbr12721.extraction.validation import validar_dados_extraidos

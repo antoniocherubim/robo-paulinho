@@ -659,6 +659,10 @@ _MARCADORES_SUBSECAO = (
 _MAX_DISTANCIA_DEP_MATERIAL = 120
 _MAX_LINHA_CANDIDATO = 220
 _MAX_DETALHES_EQUIPAMENTO = 180
+_MAX_DISTANCIA_LINHAS_QUADRO7 = 2
+
+_RE_APTO = re.compile(r"\bAPTO\s*\d+\b", re.IGNORECASE)
+_DEPENDENCIAS_UMIDAS_SEM_JANELA = frozenset({"BWC", "Banho"})
 
 _RE_ELEVADOR_TAG = re.compile(r"\bELEVADOR\d+\b", re.IGNORECASE)
 _RE_ELEVADOR_NUM = re.compile(r"\bELEVADOR\s+\d+\b", re.IGNORECASE)
@@ -705,6 +709,14 @@ _MATERIAL_LABELS: dict[str, str] = {
     "LAJE IMPERM": "Laje imperm",
     "GRAFITE": "Grafite",
 }
+_MATERIAL_LABELS.update(
+    {
+        "LAMINADODEMADEIRA": "Laminado de madeira",
+        "LAMINADO DE MADEIRA": "Laminado de madeira",
+        "PINTURACORBRANCO": "Pintura cor branco",
+        "PINTURA COR BRANCO": "Pintura cor branco",
+    }
+)
 
 _RE_MATERIAL_TOKEN = re.compile(
     r"\b(" + "|".join(re.escape(k) for k in _MATERIAL_LABELS) + r")\b",
@@ -742,6 +754,13 @@ _PADROES_DEPENDENCIA: tuple[tuple[re.Pattern[str], str, frozenset[str]], ...] = 
         "Hall elevador",
         frozenset({"viii"}),
     ),
+    (
+        re.compile(r"\bESTAR\s*JANTAR\b|\bESTARJANTAR\b", re.IGNORECASE),
+        "Estar/jantar",
+        frozenset({"vii"}),
+    ),
+    (re.compile(r"\bBWC\b", re.IGNORECASE), "BWC", frozenset({"vii"})),
+    (re.compile(r"\bCLOSET\b", re.IGNORECASE), "Closet", frozenset({"vii"})),
     (re.compile(r"\bSACADA\b", re.IGNORECASE), "Sacada", frozenset({"vii"})),
     (re.compile(r"\bSALA\b", re.IGNORECASE), "Sala", frozenset({"vii"})),
     (re.compile(r"\bCOZINHA\b", re.IGNORECASE), "Cozinha", frozenset({"vii"})),
@@ -775,7 +794,8 @@ _RE_QUADRO_VI = re.compile(
     re.IGNORECASE,
 )
 _RE_QUADRO_VII = re.compile(
-    r"\b(?:APTO|DORM|SUITE|SALA|COZINHA|BANHO|SACADA|AREA\s*SERV)\b",
+    r"\b(?:APTO|DORM|SUITE|SALA|COZINHA|BANHO|SACADA|AREA\s*SERV|"
+    r"ESTAR\s*JANTAR|ESTARJANTAR|BWC|CLOSET)\b",
     re.IGNORECASE,
 )
 _RE_QUADRO_VIII = re.compile(
@@ -920,6 +940,123 @@ def _extrair_candidato_acabamento(linha: str, secao: str) -> dict | None:
     return candidato
 
 
+def _normalizar_linha_candidato(linha: str) -> str:
+    linha = re.sub(r"[ \t]+", " ", linha.strip())
+    if not linha:
+        return ""
+    return re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha)
+
+
+def _linha_ignorar_coleta_vi_viii(linha: str) -> bool:
+    if not linha:
+        return True
+    if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or linha.startswith(
+        MARCADOR_CANDIDATOS_VII_VIII
+    ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or linha.startswith(
+        MARCADOR_EVIDENCIAS_EQUIPAMENTOS
+    ) or any(linha.startswith(m) for m in _MARCADORES_SUBSECAO):
+        return True
+    return bool(re.match(r"DOCUMENTO:\s*.+$", linha, re.IGNORECASE))
+
+
+def _indice_proxima_linha_nao_vazia(linhas: list[str], indice: int) -> int | None:
+    for j in range(indice + 1, min(indice + _MAX_DISTANCIA_LINHAS_QUADRO7, len(linhas))):
+        if linhas[j].strip():
+            return j
+    return None
+
+
+def _distancia_linhas_quadro7_valida(indice_dep: int, indice_mat: int, linhas: list[str]) -> bool:
+    if indice_mat <= indice_dep:
+        return False
+    if indice_mat == indice_dep + 1:
+        return True
+    if indice_mat == indice_dep + 2 and not linhas[indice_dep + 1].strip():
+        return True
+    return False
+
+
+def _janela_quadro7_rejeitada(linha_dep: str, linha_mat: str) -> bool:
+    janela = f"{linha_dep} {linha_mat}"
+    if len(_dependencias_na_secao(janela, "vii")) != 1:
+        return True
+    if _dependencias_na_secao(janela, "viii") or _dependencias_na_secao(linha_mat, "viii"):
+        return True
+    if _classificar_linha_vi_viii(linha_mat) == "viii":
+        return True
+    aptos = {match.group(0).upper() for match in _RE_APTO.finditer(janela)}
+    if len(aptos) > 1:
+        return True
+    if _dependencias_na_secao(linha_mat, "vii"):
+        return True
+    return False
+
+
+def _montar_candidato_acabamento_quadro7(
+    dependencia: str,
+    materiais: list[str],
+    materiais_contexto: dict[str, list[str]],
+    linha_evidencia: str,
+) -> dict:
+    candidato: dict = {
+        "quadro": "quadro7",
+        "dependencia": dependencia,
+        "materiais": materiais,
+        "linha": linha_evidencia,
+    }
+    if materiais_contexto:
+        candidato["materiais_contexto"] = materiais_contexto
+    return candidato
+
+
+def _extrair_candidato_acabamento_quadro7_janela(
+    linha_dep: str,
+    linha_mat: str,
+) -> dict | None:
+    """Quadro VII: dependencia privativa em uma linha e material na seguinte (max. 1 linha vazia)."""
+    linha_dep = _normalizar_linha_candidato(linha_dep)
+    linha_mat = _normalizar_linha_candidato(linha_mat)
+    if not linha_dep or not linha_mat:
+        return None
+    if _linha_ignorar_coleta_vi_viii(linha_dep) or _linha_ignorar_coleta_vi_viii(linha_mat):
+        return None
+
+    if _extrair_candidato_acabamento(linha_dep, "vii") is not None:
+        return None
+
+    dependencias = _dependencias_na_secao(linha_dep, "vii")
+    if len(dependencias) != 1:
+        return None
+
+    _, _, dependencia = dependencias[0]
+    # A ordem textual de plantas nao preserva a proximidade geometrica.
+    # Ambientes molhados so aceitam material explicito na mesma linha.
+    if dependencia in _DEPENDENCIAS_UMIDAS_SEM_JANELA:
+        return None
+
+    materiais_dep, _ = _extrair_materiais_linha(linha_dep)
+    if materiais_dep:
+        return None
+
+    materiais, materiais_contexto = _extrair_materiais_linha(linha_mat)
+    if not materiais:
+        return None
+
+    if _janela_quadro7_rejeitada(linha_dep, linha_mat):
+        return None
+
+    linha_evidencia = f"{linha_dep} | {linha_mat}"
+    if len(linha_evidencia) > _MAX_LINHA_CANDIDATO and len(materiais) > 3:
+        return None
+
+    return _montar_candidato_acabamento_quadro7(
+        dependencia,
+        materiais,
+        materiais_contexto,
+        linha_evidencia,
+    )
+
+
 def _linha_elevador_equipamento_rejeitada(linha: str) -> bool:
     if _RE_ELEVADOR_AREA.search(linha):
         return True
@@ -987,6 +1124,20 @@ def _linha_gera_candidato_acabamento(linha: str) -> bool:
     return False
 
 
+def _linha_gera_candidato_acabamento_com_vizinhos(
+    linha_anterior: str,
+    linha: str,
+    linha_seguinte: str,
+) -> bool:
+    if _linha_gera_candidato_acabamento(linha):
+        return True
+    return _linha_participa_candidato_acabamento_quadro7_janela(
+        linha_anterior,
+        linha,
+        linha_seguinte,
+    )
+
+
 def _linha_gera_candidato_equipamento(linha: str) -> bool:
     """True se a linha produz candidato estruturado de equipamento (Quadro VI)."""
     linha = re.sub(r"[ \t]+", " ", linha.strip())
@@ -1036,9 +1187,10 @@ def _extrair_evidencias_acabamentos_preservar(texto: str) -> str:
     """Extrai linhas OCR que geram candidatos de acabamento antes do prefiltro cortar."""
     linhas_preservar: list[str] = []
     vistos: set[str] = set()
+    linhas_brutas = texto.splitlines()
 
-    for linha in texto.splitlines():
-        linha_norm = re.sub(r"[ \t]+", " ", linha.strip())
+    for indice, linha_bruta in enumerate(linhas_brutas):
+        linha_norm = re.sub(r"[ \t]+", " ", linha_bruta.strip())
         if not linha_norm or linha_norm.startswith("DOCUMENTO:"):
             continue
         linha_limpa = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_norm)
@@ -1053,6 +1205,24 @@ def _extrair_evidencias_acabamentos_preservar(texto: str) -> str:
             linhas_preservar.append(candidato["linha"])
             break
 
+        indice_mat = _indice_proxima_linha_nao_vazia(linhas_brutas, indice)
+        if indice_mat is None:
+            continue
+        if not _distancia_linhas_quadro7_valida(indice, indice_mat, linhas_brutas):
+            continue
+        candidato_janela = _extrair_candidato_acabamento_quadro7_janela(
+            linha_limpa,
+            linhas_brutas[indice_mat],
+        )
+        if candidato_janela is None:
+            continue
+        for parte in candidato_janela["linha"].split(" | "):
+            chave = re.sub(r"\s+", " ", parte.lower())
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            linhas_preservar.append(parte)
+
     if not linhas_preservar:
         return ""
     return MARCADOR_EVIDENCIAS_ACABAMENTOS + "\n" + "\n".join(linhas_preservar)
@@ -1066,6 +1236,49 @@ def _chave_candidato(candidato: dict) -> str:
         f"{candidato['quadro']}|{candidato['dependencia'].lower()}|"
         f"{','.join(candidato['materiais']).lower()}|{ctx_txt}|{linha}"
     )
+
+
+def _extrair_candidatos_acabamento_quadro7_janela(textos: str) -> list[dict]:
+    linhas_brutas = textos.splitlines()
+    candidatos: list[dict] = []
+    vistos: set[str] = set()
+
+    for indice, linha_bruta in enumerate(linhas_brutas):
+        linha_dep = _normalizar_linha_candidato(linha_bruta)
+        if not linha_dep or _linha_ignorar_coleta_vi_viii(linha_dep):
+            continue
+
+        indice_mat = _indice_proxima_linha_nao_vazia(linhas_brutas, indice)
+        if indice_mat is None:
+            continue
+        if not _distancia_linhas_quadro7_valida(indice, indice_mat, linhas_brutas):
+            continue
+
+        candidato = _extrair_candidato_acabamento_quadro7_janela(
+            linha_dep,
+            linhas_brutas[indice_mat],
+        )
+        if candidato is None:
+            continue
+        chave = _chave_candidato(candidato)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        candidatos.append(candidato)
+
+    return candidatos
+
+
+def _linha_participa_candidato_acabamento_quadro7_janela(
+    linha_anterior: str,
+    linha: str,
+    linha_seguinte: str,
+) -> bool:
+    if _extrair_candidato_acabamento_quadro7_janela(linha, linha_seguinte) is not None:
+        return True
+    if _extrair_candidato_acabamento_quadro7_janela(linha_anterior, linha) is not None:
+        return True
+    return False
 
 
 def _formatar_linha_candidato(candidato: dict) -> str:
@@ -1187,6 +1400,13 @@ def _coletar_vi_viii_e_candidatos(
 
         vistos.add(chave)
         buckets[secao].append((ordem, item))
+
+    for candidato_janela in _extrair_candidatos_acabamento_quadro7_janela(textos):
+        chave_c = _chave_candidato(candidato_janela)
+        if chave_c in vistos_candidatos_acab:
+            continue
+        vistos_candidatos_acab.add(chave_c)
+        candidatos_acabamento.append(candidato_janela)
 
     resultado: dict[str, list[str]] = {}
     for secao, itens in buckets.items():
@@ -1387,13 +1607,20 @@ def prefiltrar_texto(texto, verbose=True):
     linha_anterior = None
     contador_repeticoes = 0
 
-    for linha in linhas:
+    for indice, linha in enumerate(linhas):
         linha_strip = linha.strip()
+        linha_anterior_strip = linhas[indice - 1].strip() if indice > 0 else ""
+        linha_seguinte_strip = linhas[indice + 1].strip() if indice + 1 < len(linhas) else ""
 
         # Preservar linhas que geram candidatos de acabamento ou equipamento
         linha_limpa_cand = re.sub(r"([A-ZÀ-Ü])\1{3,}", r"\1", linha_strip)
-        if _linha_gera_candidato_acabamento(linha_limpa_cand) or _linha_gera_candidato_equipamento(
-            linha_limpa_cand
+        if (
+            _linha_gera_candidato_acabamento_com_vizinhos(
+                linha_anterior_strip,
+                linha_limpa_cand,
+                linha_seguinte_strip,
+            )
+            or _linha_gera_candidato_equipamento(linha_limpa_cand)
         ):
             linhas_limpas.append(linha_strip)
             linha_anterior = linha_strip

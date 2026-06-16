@@ -260,6 +260,156 @@ ELEVADOR01 ELEVADOR02
         self.assertIsNone(_extrair_candidato_acabamento("CIMENTADO", "viii"))
         self.assertIsNone(_extrair_candidato_acabamento("PISO PORCELANATO", "vii"))
 
+    def test_material_laminado_de_madeira_colado(self):
+        from nbr12721.documents.pdf_processing import _extrair_materiais_linha
+
+        materiais, ctx = _extrair_materiais_linha("SACADA LAMINADODEMADEIRA")
+        self.assertIn("Laminado de madeira", materiais)
+        self.assertIn("Laminado de madeira", ctx["outros"])
+
+    def test_material_pintura_cor_branco_colado(self):
+        from nbr12721.documents.pdf_processing import _extrair_materiais_linha
+
+        materiais, _ctx = _extrair_materiais_linha("BWC PINTURACORBRANCO")
+        self.assertIn("Pintura cor branco", materiais)
+
+    def test_candidato_quadro7_estar_jantar_laminado_madeira(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        linha = "ESTARJANTAR 7,74M2 PJ1 LAMINADODEMADEIRA PM1"
+        candidato = _extrair_candidato_acabamento(linha, "vii")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["quadro"], "quadro7")
+        self.assertEqual(candidato["dependencia"], "Estar/jantar")
+        self.assertIn("Laminado de madeira", candidato["materiais"])
+
+    def test_candidato_quadro7_sacada_laminado_madeira(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        candidato = _extrair_candidato_acabamento("SACADA LAMINADODEMADEIRA", "vii")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["quadro"], "quadro7")
+        self.assertEqual(candidato["dependencia"], "Sacada")
+        self.assertIn("Laminado de madeira", candidato["materiais"])
+
+    def test_candidato_quadro7_bwc_com_contexto(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        candidato = _extrair_candidato_acabamento("BWC PISO PORCELANATO PAREDE PINTURA", "vii")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["dependencia"], "BWC")
+        ctx = candidato["materiais_contexto"]
+        self.assertEqual(ctx["pisos"], ["Porcelanato"])
+        self.assertEqual(ctx["paredes"], ["Pintura"])
+
+    def test_prefiltro_preserva_linhas_candidatos_quadro7(self):
+        from nbr12721.documents.pdf_processing import (
+            MARCADOR_EVIDENCIAS_ACABAMENTOS,
+            extrair_candidatos_acabamentos,
+        )
+        from nbr12721.extraction.deterministic_extraction.extractor import (
+            extrair_dados_deterministico,
+        )
+
+        ruido = "\n".join("240x480 240x480 JANELA PORTA" for _ in range(120))
+        linha = "ESTARJANTAR 7,74M2 PJ1 LAMINADODEMADEIRA PM1"
+        texto = f"""
+========================================
+DOCUMENTO: memorial.pdf
+========================================
+{ruido}
+{linha}
+{ruido}
+"""
+        filtrado = prefiltrar_texto(texto, verbose=False)
+        self.assertIn(MARCADOR_EVIDENCIAS_ACABAMENTOS, filtrado)
+        self.assertIn("ESTARJANTAR", filtrado)
+        self.assertIn("LAMINADODEMADEIRA", filtrado)
+
+        candidatos = extrair_candidatos_acabamentos(filtrado)
+        deps = {c["dependencia"] for c in candidatos if c["quadro"] == "quadro7"}
+        self.assertIn("Estar/jantar", deps)
+
+        dados = extrair_dados_deterministico(filtrado)
+        deps_q7 = {
+            item["dependencia"]
+            for item in dados["quadro7"]["acabamentos"]
+            if item.get("dependencia")
+        }
+        self.assertIn("Estar/jantar", deps_q7)
+
+    def test_candidato_quadro7_rejeita_linha_ambigua(self):
+        from nbr12721.documents.pdf_processing import _extrair_candidato_acabamento
+
+        self.assertIsNone(
+            _extrair_candidato_acabamento("SACADA SALA LAMINADODEMADEIRA", "vii")
+        )
+
+    def test_candidato_quadro7_janela_sacada_laminado_madeira(self):
+        from nbr12721.documents.pdf_processing import (
+            _extrair_candidato_acabamento_quadro7_janela,
+            extrair_candidatos_acabamentos,
+        )
+
+        candidato = _extrair_candidato_acabamento_quadro7_janela("SACADA", "LAMINADODEMADEIRA")
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["quadro"], "quadro7")
+        self.assertEqual(candidato["dependencia"], "Sacada")
+        self.assertIn("Laminado de madeira", candidato["materiais"])
+
+        candidatos = extrair_candidatos_acabamentos("SACADA\nLAMINADODEMADEIRA")
+        q7 = [c for c in candidatos if c["quadro"] == "quadro7"]
+        self.assertEqual(len(q7), 1)
+        self.assertEqual(q7[0]["dependencia"], "Sacada")
+
+    def test_candidato_quadro7_janela_estar_jantar_laminado(self):
+        from nbr12721.documents.pdf_processing import (
+            _extrair_candidato_acabamento_quadro7_janela,
+            extrair_candidatos_acabamentos,
+        )
+
+        linha_mat = "7,74M2 PJ1 LAMINADODEMADEIRA PM1"
+        candidato = _extrair_candidato_acabamento_quadro7_janela("ESTARJANTAR", linha_mat)
+        self.assertIsNotNone(candidato)
+        self.assertEqual(candidato["dependencia"], "Estar/jantar")
+        self.assertIn("Laminado de madeira", candidato["materiais"])
+
+        texto = f"ESTARJANTAR\n{linha_mat}"
+        candidatos = extrair_candidatos_acabamentos(texto)
+        q7 = [c for c in candidatos if c["quadro"] == "quadro7"]
+        self.assertEqual(len(q7), 1)
+
+    def test_candidato_quadro7_janela_rejeita_multiplos_ambientes(self):
+        from nbr12721.documents.pdf_processing import (
+            _extrair_candidato_acabamento_quadro7_janela,
+        )
+
+        self.assertIsNone(
+            _extrair_candidato_acabamento_quadro7_janela("SACADA", "SALA LAMINADODEMADEIRA")
+        )
+        self.assertIsNone(
+            _extrair_candidato_acabamento_quadro7_janela(
+                "APTO01 SACADA",
+                "APTO02 SALA LAMINADODEMADEIRA",
+            )
+        )
+
+    def test_candidato_quadro7_janela_rejeita_bwc_com_material_vizinho(self):
+        from nbr12721.documents.pdf_processing import (
+            _extrair_candidato_acabamento,
+            _extrair_candidato_acabamento_quadro7_janela,
+        )
+
+        self.assertIsNone(
+            _extrair_candidato_acabamento_quadro7_janela(
+                "BWC",
+                "LAMINADODEMADEIRA 2,70M2",
+            )
+        )
+        candidato = _extrair_candidato_acabamento("BWC CERÂMICA 2,70M2", "vii")
+        self.assertIsNotNone(candidato)
+        self.assertIn("Ceramica", candidato["materiais"])
+
     def test_candidato_quadro8_escada_cimentado(self):
         from nbr12721.documents.pdf_processing import (
             MARCADOR_CANDIDATOS_VII_VIII,
