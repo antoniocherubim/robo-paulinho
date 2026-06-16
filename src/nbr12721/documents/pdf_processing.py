@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -74,6 +75,9 @@ def _fechar_imagem(img):
 OCR_REGIONAL_DPI = 80
 OCR_REGIONAL_TIMEOUT = 30
 OCR_PAGINA_GRANDE_AREA = 1_500_000  # width*height em pontos PDF (pdfplumber)
+OCR_ESPACIAL_DPI = 200
+OCR_ESPACIAL_TIMEOUT = 20
+MARCADOR_EVIDENCIAS_ESPACIAIS_QUADRO7 = "EVIDENCIAS ESPACIAIS QUADRO VII:"
 
 _REGIOES_OCR = (
     ("direita", 0.78, 0.0, 1.0, 1.0),
@@ -84,6 +88,17 @@ _REGIOES_OCR = (
 _RE_CORPO_PROJETO_OCR = re.compile(
     r"APTOS?|APARTAMENTOS?|PAVIMENTOS?|PAV\.?\s*TIPO|"
     r"TOTAL\s+DE\s+VAGAS|\d+\s*[xX×]\s*\d+\s*APTOS",
+    re.IGNORECASE,
+)
+_RE_AMBIENTE_MOLHADO = re.compile(r"\b(?:BWC|BANHO)\b", re.IGNORECASE)
+_RE_MATERIAL_ESPACIAL = (
+    (re.compile(r"\bCER[ÂA]MIC[AO]?\b", re.IGNORECASE), "CERÂMICA"),
+    (re.compile(r"\bPORCELANATO\b", re.IGNORECASE), "PORCELANATO"),
+    (re.compile(r"\bCIMENTADO\b", re.IGNORECASE), "CIMENTADO"),
+)
+_RE_AREA_M2 = re.compile(
+    r"\b\d{1,3}(?:[,.]\d{1,3})?\s*M\s*(?:2|²)\b|"
+    r"\b\d{1,3}(?:[,.]\d{1,3})?M(?:2|²)\b",
     re.IGNORECASE,
 )
 
@@ -131,6 +146,155 @@ def _ocr_crop(img, crop_box, pytesseract, timeout):
         )
     finally:
         _fechar_imagem(crop)
+
+
+def _normalizar_area_m2(texto: str) -> str:
+    return re.sub(r"\s+", "", texto.upper()).replace(".", ",").replace("²", "2")
+
+
+def _linha_evidencia_ambiente_molhado(anchor: str, texto_ocr: str) -> str:
+    """Monta linha conservadora quando o OCR local confirmou material do ambiente."""
+    texto = normalizar_ocr(texto_ocr or "")
+    material = ""
+    for padrao, label in _RE_MATERIAL_ESPACIAL:
+        if padrao.search(texto):
+            material = label
+            break
+    if not material:
+        return ""
+
+    area = ""
+    m_area = _RE_AREA_M2.search(texto)
+    if m_area:
+        area = _normalizar_area_m2(m_area.group(0))
+
+    partes = [anchor.upper(), material]
+    if area:
+        partes.append(area)
+    return " ".join(partes)
+
+
+def _bbox_crop_ambiente_molhado(word: dict, pagina, escala: float) -> tuple[int, int, int, int]:
+    """Crop local em torno do rotulo; coordenadas pdfplumber usam origem no topo."""
+    x0 = max(0, float(word.get("x0", 0)) - 50)
+    x1 = min(float(pagina.width), float(word.get("x1", 0)) + 130)
+    top = max(0, float(word.get("top", 0)) - 35)
+    bottom = min(float(pagina.height), float(word.get("bottom", 0)) + 70)
+    return (
+        int(x0 * escala),
+        int(top * escala),
+        int(x1 * escala),
+        int(bottom * escala),
+    )
+
+
+def _resolver_pdftoppm(poppler_path: str | None) -> str:
+    exe = "pdftoppm.exe" if sys.platform == "win32" else "pdftoppm"
+    if poppler_path:
+        return os.path.join(poppler_path, exe)
+    return exe
+
+
+def _renderizar_crop_pdf(
+    caminho: str,
+    indice: int,
+    box: tuple[int, int, int, int],
+    dpi: int,
+    poppler_path: str | None,
+):
+    """Renderiza somente o crop necessario via pdftoppm, evitando carregar a prancha inteira."""
+    import PIL.Image
+
+    x0, y0, x1, y1 = box
+    largura = max(1, x1 - x0)
+    altura = max(1, y1 - y0)
+    with tempfile.TemporaryDirectory(prefix="nbr12721_spatial_") as tmpdir:
+        prefixo = os.path.join(tmpdir, "crop")
+        cmd = [
+            _resolver_pdftoppm(poppler_path),
+            "-f",
+            str(indice),
+            "-l",
+            str(indice),
+            "-singlefile",
+            "-png",
+            "-r",
+            str(dpi),
+            "-x",
+            str(x0),
+            "-y",
+            str(y0),
+            "-W",
+            str(largura),
+            "-H",
+            str(altura),
+            caminho,
+            prefixo,
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        img = PIL.Image.open(prefixo + ".png")
+        try:
+            return img.copy()
+        finally:
+            _fechar_imagem(img)
+
+
+def _ocr_espacial_ambientes_molhados_pagina(
+    pagina,
+    convert_from_path,
+    pytesseract,
+    caminho: str,
+    indice: int,
+    poppler_path: str | None,
+) -> str:
+    """OCR local por coordenadas para materiais de BWC/BANHO em plantas."""
+    try:
+        palavras = pagina.extract_words(x_tolerance=2, y_tolerance=2) or []
+    except Exception as e:
+        logger.debug("%s p.%s: falha ao extrair palavras para OCR espacial: %s", caminho, indice, e)
+        return ""
+
+    anchors = [p for p in palavras if _RE_AMBIENTE_MOLHADO.fullmatch(str(p.get("text", "")).strip())]
+    if not anchors:
+        return ""
+
+    linhas: list[str] = []
+    vistos: set[str] = set()
+    escala = OCR_ESPACIAL_DPI / 72
+    for word in anchors:
+        crop = None
+        try:
+            box = _bbox_crop_ambiente_molhado(word, pagina, escala)
+            crop = _renderizar_crop_pdf(caminho, indice, box, OCR_ESPACIAL_DPI, poppler_path)
+            texto_crop = pytesseract.image_to_string(
+                crop,
+                lang=TESSERACT_LANG,
+                config="--psm 11",
+                timeout=OCR_ESPACIAL_TIMEOUT,
+            )
+        except Exception as e:
+            logger.debug("%s p.%s: OCR espacial falhou em %s: %s", caminho, indice, word, e)
+            continue
+        finally:
+            _fechar_imagem(crop)
+
+        linha = _linha_evidencia_ambiente_molhado(str(word.get("text", "")), texto_crop)
+        if not linha:
+            continue
+        chave = re.sub(r"\s+\d{1,3}(?:[,.]\d{1,3})?m2$", "", linha.lower()).strip()
+        chave = re.sub(r"\s+", " ", chave)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        linhas.append(linha)
+        if len(vistos) >= 2:
+            break
+
+    gc.collect()
+
+    if not linhas:
+        return ""
+    return MARCADOR_EVIDENCIAS_ESPACIAIS_QUADRO7 + "\n" + "\n".join(linhas)
 
 
 def _ocr_regioes_pagina(convert_from_path, pytesseract, caminho, indice, poppler_path):
@@ -302,22 +466,37 @@ def iterar_texto_pdf_paginas(caminho):
             logger.info("%s: PDF aberto com %s pagina(s)", nome, total_paginas)
             for indice, pagina in enumerate(pdf.pages, start=1):
                 texto_nativo = ""
+                texto_espacial = ""
                 try:
                     texto_nativo = (pagina.extract_text() or "").strip()
                 except Exception as e:
                     logger.warning("%s pagina %s: falha no texto nativo: %s", nome, indice, e)
 
+                if ocr_disponivel:
+                    try:
+                        texto_espacial = _ocr_espacial_ambientes_molhados_pagina(
+                            pagina,
+                            convert_from_path,
+                            pytesseract,
+                            caminho,
+                            indice,
+                            poppler_path,
+                        )
+                    except Exception as e:
+                        logger.warning("%s p.%s/%s: OCR espacial falhou: %s", nome, indice, total_paginas, e)
+
                 if len(texto_nativo) >= OCR_MIN_CHARS_PAGINA:
                     paginas_emitidas += 1
                     paginas_nativas += 1
+                    texto_emitir = _concatenar_textos_ocr(texto_nativo, texto_espacial)
                     logger.info(
                         "%s p.%s/%s: %s chars extraidos via texto nativo",
                         nome,
                         indice,
                         total_paginas,
-                        len(texto_nativo),
+                        len(texto_emitir),
                     )
-                    yield indice, texto_nativo
+                    yield indice, texto_emitir
                     continue
 
                 if not ocr_disponivel:
@@ -416,7 +595,7 @@ def iterar_texto_pdf_paginas(caminho):
                 finally:
                     gc.collect()
 
-                texto_ocr = _concatenar_textos_ocr(texto_full, texto_regional)
+                texto_ocr = _concatenar_textos_ocr(texto_full, texto_regional, texto_espacial)
                 texto = _concatenar_textos_ocr(texto_ocr, texto_nativo)
                 if texto.strip():
                     tem_full = bool(texto_full.strip())
@@ -950,12 +1129,14 @@ def _normalizar_linha_candidato(linha: str) -> str:
 def _linha_ignorar_coleta_vi_viii(linha: str) -> bool:
     if not linha:
         return True
-    if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or linha.startswith(
-        MARCADOR_CANDIDATOS_VII_VIII
-    ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or linha.startswith(
-        MARCADOR_EVIDENCIAS_EQUIPAMENTOS
-    ) or any(linha.startswith(m) for m in _MARCADORES_SUBSECAO):
-        return True
+        if linha.startswith(MARCADOR_EVIDENCIAS_VI_VIII) or linha.startswith(
+            MARCADOR_CANDIDATOS_VII_VIII
+        ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or linha.startswith(
+            MARCADOR_EVIDENCIAS_EQUIPAMENTOS
+        ) or linha.startswith(
+            MARCADOR_EVIDENCIAS_ESPACIAIS_QUADRO7
+        ) or any(linha.startswith(m) for m in _MARCADORES_SUBSECAO):
+            return True
     return bool(re.match(r"DOCUMENTO:\s*.+$", linha, re.IGNORECASE))
 
 
@@ -1363,6 +1544,8 @@ def _coletar_vi_viii_e_candidatos(
             MARCADOR_CANDIDATOS_VII_VIII
         ) or linha.startswith(MARCADOR_EVIDENCIAS_ACABAMENTOS) or linha.startswith(
             MARCADOR_EVIDENCIAS_EQUIPAMENTOS
+        ) or linha.startswith(
+            MARCADOR_EVIDENCIAS_ESPACIAIS_QUADRO7
         ) or any(linha.startswith(m) for m in _MARCADORES_SUBSECAO):
             continue
 

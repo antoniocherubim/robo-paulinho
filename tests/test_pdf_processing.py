@@ -1,7 +1,10 @@
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from nbr12721.documents.pdf_processing import (
+    _linha_evidencia_ambiente_molhado,
+    _ocr_espacial_ambientes_molhados_pagina,
     _ocr_regioes_pagina,
     iterar_texto_pdf_paginas,
     prefiltrar_texto,
@@ -9,6 +12,40 @@ from nbr12721.documents.pdf_processing import (
 
 
 class TestPrefiltrarTexto(unittest.TestCase):
+    def test_linha_evidencia_ambiente_molhado_normaliza_ceramica(self):
+        linha = _linha_evidencia_ambiente_molhado(
+            "BWC",
+            "BWC\n-0,02\nCERÂMIC\n2,70 M2",
+        )
+        self.assertEqual(linha, "BWC CERÂMICA 2,70M2")
+
+    def test_ocr_espacial_pdf_real_captura_bwc_ceramica(self):
+        pdf_path = Path("data/input/documentos/AY0410-ARQ-PL-0007-PLA-TIPO_TORRE01-R02.pdf")
+        if not pdf_path.exists():
+            self.skipTest("PDF fixture local indisponivel")
+
+        try:
+            import pdfplumber
+            import pytesseract
+            from pdf2image import convert_from_path
+        except ImportError as exc:
+            self.skipTest(f"dependencia OCR indisponivel: {exc}")
+
+        try:
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                texto = _ocr_espacial_ambientes_molhados_pagina(
+                    pdf.pages[0],
+                    convert_from_path,
+                    pytesseract,
+                    str(pdf_path),
+                    1,
+                    None,
+                )
+        except Exception as exc:
+            self.skipTest(f"OCR espacial indisponivel neste ambiente: {exc}")
+
+        self.assertIn("BWC CERÂMICA 2,70M2", texto)
+
     def test_preserva_evidencias_criticas_e_limita_tamanho(self):
         texto = """
 ========================================
