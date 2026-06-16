@@ -43,6 +43,19 @@ Reutilizar texto já extraído (pula leitura de PDFs):
 python3 main.py --skip-extracao
 ```
 
+### Inventario geometrico de pranchas
+
+A fundacao vetorial/textual fica separada do pipeline principal. Ela gera JSONs
+diagnosticos com textos, linhas, retangulos e curvas por pagina, preservando
+coordenadas em pontos PDF (`pdfplumber_top_left_points`). Por padrao, processa
+apenas pranchas tipo (`PLA-TIPO`/`TIPO_TORRE`).
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.inventariar_geometria_pdfs --max-paginas 1
+```
+
+Saida padrao: `data/output/saida/geometria_pdf/*.geometria.json`.
+
 Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original). **Após mudanças no prefiltro**, regenere o cache com pipeline completo (OCR) antes de usar `--usar-texto-filtrado-cache` — o flag não refiltra automaticamente.
 
 ```bash

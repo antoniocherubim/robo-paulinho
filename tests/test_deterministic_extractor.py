@@ -632,7 +632,7 @@ COBERTURA - ÁREA: 250,00 m²
 
     def test_quadro6_sem_template_vazio_na_validacao(self):
         from nbr12721.extraction.validation import validar_dados_extraidos
-        from test_validation import _dados_minimos_completos
+        from tests.test_validation import _dados_minimos_completos
 
         from nbr12721.extraction.deterministic_extraction.quadro6 import (
             _preencher_quadro6,
@@ -773,7 +773,7 @@ COBERTURA - ÁREA: 250,00 m²
 
     def test_quadro7_sem_template_vazio_na_validacao(self):
         from nbr12721.extraction.validation import validar_dados_extraidos
-        from test_validation import _dados_minimos_completos
+        from tests.test_validation import _dados_minimos_completos
 
         from nbr12721.extraction.deterministic_extraction.quadro7 import (
             _preencher_quadro7,
@@ -808,7 +808,7 @@ COBERTURA - ÁREA: 250,00 m²
 
     def test_quadro8_sem_template_vazio_na_validacao(self):
         from nbr12721.extraction.validation import validar_dados_extraidos
-        from test_validation import _dados_minimos_completos
+        from tests.test_validation import _dados_minimos_completos
 
         from nbr12721.extraction.deterministic_extraction.quadro8 import (
             _preencher_quadro8,
