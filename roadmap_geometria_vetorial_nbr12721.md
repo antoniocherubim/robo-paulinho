@@ -19,7 +19,7 @@ Princípio de trabalho: primeiro construir uma representação fiel da prancha; 
 ## Checklist de acompanhamento
 
 - [x] Task 28 — Inventário vetorial/textual por página.
-- [ ] Task 29 — Viewer/relatório diagnóstico da geometria.
+- [x] Task 29 — Viewer/relatório diagnóstico da geometria.
 - [ ] Task 30 — Classificação inicial de elementos vetoriais.
 - [ ] Task 31 — Detecção de regiões/células fechadas candidatas a ambientes.
 - [ ] Task 32 — Associação espacial texto -> ambiente.
@@ -60,6 +60,8 @@ Critério de aceite:
 ## Fase 2 — Normalização e diagnóstico visual
 
 ### Task 29 — Viewer/relatório diagnóstico da geometria
+
+Status: implementada.
 
 Objetivo: facilitar inspeção humana do inventário geométrico.
 

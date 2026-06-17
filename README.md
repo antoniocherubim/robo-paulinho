@@ -56,6 +56,26 @@ PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.inventariar_geometria_pdfs --
 
 Saida padrao: `data/output/saida/geometria_pdf/*.geometria.json`.
 
+### Overlay SVG diagnostico da geometria
+
+A partir dos inventarios JSON, gera SVGs por pagina com textos, linhas (H/V/diagonal),
+retangulos e bboxes de curvas, em camadas nomeadas para inspecao visual.
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.gerar_debug_geometria
+```
+
+Saida padrao: `data/output/saida/geometria_debug/*.pNNN.debug.svg`.
+
+Para uma prancha especifica:
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.gerar_debug_geometria \
+  --entrada data/output/saida/geometria_pdf/AY0410-ARQ-PL-0007-PLA-TIPO_TORRE01-R02.geometria.json
+```
+
+Limites opcionais por camada: `--max-lines`, `--max-curves`, `--max-texts`.
+
 Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original). **Após mudanças no prefiltro**, regenere o cache com pipeline completo (OCR) antes de usar `--usar-texto-filtrado-cache` — o flag não refiltra automaticamente.
 
 ```bash
