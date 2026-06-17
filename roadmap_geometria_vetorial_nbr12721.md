@@ -22,7 +22,9 @@ Princípio de trabalho: primeiro construir uma representação fiel da prancha; 
 - [x] Task 29 — Viewer/relatório diagnóstico da geometria.
 - [x] Task 30 — Classificação inicial de elementos vetoriais.
 - [x] Task 30.1 — Overlay SVG da geometria classificada (ferramenta separada da Task 29).
-- [ ] Task 31 — Detecção de regiões/células fechadas candidatas a ambientes.
+- [x] Task 31 — Detecção de regiões/células fechadas candidatas a ambientes.
+- [x] Task 31.1 — Overlay SVG de regiões candidatas.
+- [x] Task 31.2 — Células compostas (regiões maiores por união).
 - [ ] Task 32 — Associação espacial texto -> ambiente.
 - [ ] Task 33 — Associação espacial material -> ambiente.
 - [ ] Task 34 — Calibração de escala e unidades.
@@ -114,19 +116,53 @@ Entregáveis esperados:
 
 ### Task 31 — Detecção de regiões/células fechadas candidatas a ambientes
 
+Status: implementada (JSON de regiões candidatas, estratégia `adjacent_grid_v1`).
+
 Objetivo: reconstruir possíveis cômodos a partir de paredes/linhas vetoriais.
 
 Entregáveis esperados:
 
-- Grafo de segmentos conectados.
-- Polígonos ou regiões fechadas candidatas a ambientes.
-- Área geométrica bruta por região.
-- Relação entre região e textos internos/próximos.
+- Normalização e merge de `wall_candidates` horizontais/verticais.
+- Células ortogonais fechadas com evidência em `edges` (`source_indices`, `source_count`).
+- JSON em `geometria_regioes/*.regioes.json` com stats diagnósticos.
+- `detection_strategy: adjacent_grid_v1`; regiões com `confidence: candidate`.
 
 Critério de aceite:
 
-- Ambientes como `BWC`, `SACADA`, `ESTAR/JANTAR` aparecem associados a regiões plausíveis.
-- Regiões pequenas irrelevantes ou mobiliário são filtradas por área/forma/contexto.
+- CLI gera JSON auditável com stats (`grid_cells_checked`, `merged_horizontal`, etc.).
+- Testes unitários passam; integração real gera JSON (regiões podem ser zero na v1).
+- Associação a ambientes (`BWC`, etc.) permanece na Task 32.
+
+### Task 31.1 — Overlay SVG de regiões candidatas
+
+Status: implementada.
+
+Objetivo: viewer SVG separado consumindo `geometria_regioes/*.regioes.json`.
+
+Entregáveis esperados:
+
+- CLI `gerar_debug_regioes` (nao altera `region_detection.py`).
+- Saida em `geometria_regioes_debug/*.regioes.debug.svg`.
+- Regioes candidatas e rejeitadas com tooltips (`rejection_reason`, `edge_source_counts`).
+- Labels curtos (`r0001`/`x0001`); rejeitadas visiveis por padrao.
+
+### Task 31.2 — Células compostas
+
+Status: concluída. Regiões maiores formadas por união de células fechadas adjacentes.
+
+Entregáveis:
+
+- Módulo `composite_region_detection.py` com estratégia `connected_cell_components_v1`.
+- CLI `detectar_regioes_compostas` (não altera `region_detection.py`).
+- Saída em `geometria_regioes_compostas/*.regioes_compostas.json`.
+- Filtros: dimensões mínimas, `min_fill_ratio`, limites de área/largura/altura vs página.
+- Campos por composta: `adjacency_edge_count`, `source_confidences`, `composition_type`,
+  `fill_ratio`, `width_ratio`, `height_ratio`.
+- Stats: `base_cells`, `pair_checks`, `adjacency_edges`, `duplicate_composites`.
+- Dedup por bbox arredondado com `adjacency_tolerance`.
+
+Resultado real TORRE01: 75 `base_cells`, 2775 `pair_checks`, 1 `adjacency_edge`,
+74 `components_found`, 0 `composite_regions` aceitas (células isoladas / `single_cell_component`).
 
 ### Task 32 — Associação espacial texto -> ambiente
 

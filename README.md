@@ -105,6 +105,55 @@ Saida padrao: `data/output/saida/geometria_classificada_debug/*.pNNN.classificad
 
 Flags: `--mostrar-axis-aligned`, `--max-wall-candidates`, `--max-noise`, `--max-rects`, `--max-curves`.
 
+### Deteccao de regioes candidatas (celulas ortogonais)
+
+A partir da classificacao vetorial, detecta celulas retangulares fechadas por
+`wall_candidates` usando estrategia `adjacent_grid_v1`. Resultado explicitamente
+candidato (`confidence: candidate`), nao ambiente final.
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.detectar_regioes_geometricas
+```
+
+Saida padrao: `data/output/saida/geometria_regioes/*.regioes.json`.
+
+Flags: `--merge-tolerance`, `--snap-tolerance`, `--min-region-width`, `--min-region-height`,
+`--min-region-area`, `--max-region-area-ratio`, `--max-regions`, `--max-rejected-regions`.
+
+### Overlay SVG de regioes detectadas
+
+Visualiza regioes candidatas e rejeitadas com tooltips (`rejection_reason`, `edge_source_counts`).
+Rejeitadas aparecem por padrao. Labels curtos (`r0001`); ID completo no tooltip.
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.gerar_debug_regioes
+```
+
+Saida padrao: `data/output/saida/geometria_regioes_debug/*.pNNN.regioes.debug.svg`.
+
+Flags: `--ocultar-rejeitadas`, `--ocultar-labels`, `--max-regions`, `--max-rejected`.
+
+### Deteccao de regioes compostas (celulas adjacentes)
+
+A partir de `geometria_regioes/*.regioes.json`, agrupa celulas fechadas adjacentes
+em regioes compostas candidatas (`connected_cell_components_v1`). Nao altera a deteccao
+de celulas individuais nem gera ambiente final.
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.detectar_regioes_compostas
+```
+
+Saida padrao: `data/output/saida/geometria_regioes_compostas/*.regioes_compostas.json`.
+
+Flags: `--adjacency-tolerance`, `--min-composite-width`, `--min-composite-height`,
+`--min-composite-area`, `--min-fill-ratio`, `--max-composite-area-ratio`,
+`--max-composite-width-ratio`, `--max-composite-height-ratio`, `--max-cells-per-component`,
+`--max-composites`, `--max-rejected-composites`.
+
+Cada regiao composta inclui `adjacency_edge_count`, `source_confidences`, `fill_ratio`,
+`composition_type` (`single_existing_region` ou `connected_cells`) e stats de
+diagnostico (`base_cells`, `pair_checks`, `adjacency_edges`).
+
 Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original). **Após mudanças no prefiltro**, regenere o cache com pipeline completo (OCR) antes de usar `--usar-texto-filtrado-cache` — o flag não refiltra automaticamente.
 
 ```bash
