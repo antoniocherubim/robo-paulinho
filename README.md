@@ -76,6 +76,35 @@ PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.gerar_debug_geometria \
 
 Limites opcionais por camada: `--max-lines`, `--max-curves`, `--max-texts`.
 
+### Classificacao vetorial (candidatos a parede/contorno)
+
+A partir dos inventarios JSON, classifica linhas em candidatos a parede/contorno e ruidos
+graficos (carimbo, textos densos, segmentos curtos, diagonais). Cada linha recebe
+`classification_reason` para auditoria. O roll-up `axis_aligned_segments` preserva todos
+os segmentos H/V longos, inclusive os descartados por heuristica exclusiva.
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.classificar_geometria_vetorial
+```
+
+Saida padrao: `data/output/saida/geometria_classificada/*.classificada.json`.
+
+Parametros: `--min-length-wall`, `--titleblock-right-ratio`, `--titleblock-bottom-ratio`,
+`--text-near-radius`, `--text-near-min-count`.
+
+### Overlay SVG interpretado da classificacao
+
+Visualiza os buckets classificados (contorno candidato, ruidos, diagonais) sem alterar
+o overlay bruto da Task 29. Por padrao nao renderiza `axis_aligned_segments` (roll-up).
+
+```bash
+PYTHONPATH=src ./venv/bin/python -m nbr12721.tools.gerar_debug_classificacao_vetorial
+```
+
+Saida padrao: `data/output/saida/geometria_classificada_debug/*.pNNN.classificada.debug.svg`.
+
+Flags: `--mostrar-axis-aligned`, `--max-wall-candidates`, `--max-noise`, `--max-rects`, `--max-curves`.
+
 Usar o texto filtrado em cache **sem refiltrar** (mesmo conteúdo de `textos_filtrados.txt` gerado no OCR original). **Após mudanças no prefiltro**, regenere o cache com pipeline completo (OCR) antes de usar `--usar-texto-filtrado-cache` — o flag não refiltra automaticamente.
 
 ```bash

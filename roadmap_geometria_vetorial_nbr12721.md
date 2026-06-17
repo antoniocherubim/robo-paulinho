@@ -20,7 +20,8 @@ Princípio de trabalho: primeiro construir uma representação fiel da prancha; 
 
 - [x] Task 28 — Inventário vetorial/textual por página.
 - [x] Task 29 — Viewer/relatório diagnóstico da geometria.
-- [ ] Task 30 — Classificação inicial de elementos vetoriais.
+- [x] Task 30 — Classificação inicial de elementos vetoriais.
+- [x] Task 30.1 — Overlay SVG da geometria classificada (ferramenta separada da Task 29).
 - [ ] Task 31 — Detecção de regiões/células fechadas candidatas a ambientes.
 - [ ] Task 32 — Associação espacial texto -> ambiente.
 - [ ] Task 33 — Associação espacial material -> ambiente.
@@ -79,19 +80,35 @@ Critério de aceite:
 
 ### Task 30 — Classificação inicial de elementos vetoriais
 
+Status: implementada (JSON classificado).
+
 Objetivo: separar ruído gráfico de candidatos úteis para paredes, portas, shafts, esquadrias e mobiliário.
 
 Entregáveis esperados:
 
 - Classificação conservadora de linhas por orientação, comprimento, espessura e agrupamento.
-- Identificação de segmentos candidatos a parede.
+- Identificação de segmentos candidatos a parede/contorno (`wall_candidates`).
 - Identificação de elementos claramente não estruturais, como carimbo, cotas, hachuras e textos.
 - Métricas por página: quantidade de segmentos úteis vs. descartados.
+- `classification_reason` por linha e roll-up `axis_aligned_segments` para auditoria.
 
 Critério de aceite:
 
 - Prancha tipo mantém segmentos principais da planta.
 - Carimbo e legenda são majoritariamente excluídos da camada de ambiente.
+
+### Task 30.1 — Overlay SVG da geometria classificada
+
+Status: implementada.
+
+Objetivo: viewer SVG separado da Task 29 consumindo `geometria_classificada/*.classificada.json`.
+
+Entregáveis esperados:
+
+- CLI `gerar_debug_classificacao_vetorial` (nao altera `geometry_debug_svg.py`).
+- Saida em `geometria_classificada_debug/*.classificada.debug.svg`.
+- Cores por bucket: wall_candidates, ruidos, diagonais.
+- Tooltips com `classification_reason` e coordenadas.
 
 ## Fase 3 — Ambientes como geometria
 
